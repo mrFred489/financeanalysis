@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,8 +39,9 @@ func TestOpen(t *testing.T) {
 	if err := db.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
 		t.Fatalf("failed to check journal_mode: %v", err)
 	}
-	if journalMode != "DELETE" {
-		t.Errorf("expected journal_mode=DELETE, got %q", journalMode)
+	// SQLite returns lowercase for journal_mode
+	if journalMode != "delete" {
+		t.Errorf("expected journal_mode=delete, got %q", journalMode)
 	}
 }
 
@@ -60,6 +62,12 @@ func TestMigrate(t *testing.T) {
 		t.Fatalf("failed to open database: %v", err)
 	}
 	defer db.Close()
+
+	// Set the database path for Backup function
+	// We need to initialize the global DB
+	if err := InitDB(context.Background(), dbPath); err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
 
 	// Apply migrations
 	if err := Migrate(context.Background(), db, backupDir); err != nil {
@@ -99,6 +107,11 @@ func TestMigrateUpToDate(t *testing.T) {
 	}
 	defer db.Close()
 
+	// Set the database path
+	if err := InitDB(context.Background(), dbPath); err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+
 	if err := Migrate(context.Background(), db, backupDir); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -134,14 +147,21 @@ func TestBackupRetention(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	backupDir := filepath.Join(tmpDir, "backups")
+	
+	// Create backup directory
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		t.Fatalf("failed to create backup dir: %v", err)
+	}
 
-	// Create some dummy backup files
+	// Create some dummy backup files with different timestamps
 	for i := 0; i < 25; i++ {
-		backupPath := filepath.Join(backupDir, filepath.Base("backup-00000.sqlite"))
-		// Use different timestamps so they have different modification times
-		if err := os.WriteFile(backupPath, []byte{}, 0644); err != nil {
+		backupPath := filepath.Join(backupDir, fmt.Sprintf("backup-%05d.sqlite", i))
+		// Write with different content to ensure different modification times
+		if err := os.WriteFile(backupPath, []byte(fmt.Sprintf("backup %d", i)), 0644); err != nil {
 			t.Fatalf("failed to create backup file: %v", err)
 		}
+		// Sleep a bit to ensure different modification times
+		// (not actually needed for the test, but good for realism)
 	}
 
 	// Retain only 20
