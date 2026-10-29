@@ -11,8 +11,7 @@ const config = {
 		}),
 		alias: {
 			$lib: './src/lib'
-		},
-		csr: true
+		}
 	}
 };
 
