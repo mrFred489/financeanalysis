@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build && mkdir -p ../internal/webui/dist && cp -r build/* ../internal/webui/dist/",
+    "build": "vite build && mkdir -p internal/webui/dist && cp -r build/* internal/webui/dist/",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "lint": "prettier --check . && eslint .",
