@@ -43,5 +43,3 @@ test-results/
 *.exe
 *.so
 *.dll
-go.mod
-go.sum

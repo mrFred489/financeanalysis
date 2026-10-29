@@ -14,7 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@paraglide/sveltekit": "^0.9.0",
+    "@inlang/paraglide-js": "^2.29.3",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "sveltekit-superforms": "^2.0.0",
