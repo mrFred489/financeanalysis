@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [
-		paraglideVitePlugin({ project: './paraglide.json', outdir: './src/paraglide' }),
+		paraglideVitePlugin({ project: './project.inlang', outdir: './src/paraglide' }),
 		tailwindcss(),
 		sveltekit()
 	],

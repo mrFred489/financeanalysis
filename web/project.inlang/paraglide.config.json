@@ -1,0 +1,7 @@
+{
+  "id": "financeanalysis",
+  "sourceLanguage": "en",
+  "languages": ["en"],
+  "inputPath": "../messages",
+  "outputPath": "../src/paraglide"
+}
