@@ -68,7 +68,6 @@
 						{:else}
 							<span class="text-red-600 font-medium">{$i18n.t('home.error')}</span>
 						{/if}
-						</span>
 						{#if schemaVersion}
 							<span class="text-gray-500 ml-2">({$i18n.t('home.schemaVersion', { version: schemaVersion })})</span>
 						{/if}
