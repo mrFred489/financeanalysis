@@ -1,0 +1,174 @@
+version: '3'
+
+vars:
+  BIN_DIR: bin
+  WEB_DIR: web
+  WEBUI_DIR: internal/webui
+  DIST_DIR: '{{.WEBUI_DIR}}/dist'
+  BINARY_NAME: financeanalysis
+  BINARY_PATH: '{{.BIN_DIR}}/{{.BINARY_NAME}}{{if eq .GOOS "windows" ".exe"}}'
+  COMPOSE_FILE: compose.yaml
+
+env:
+  GOOS: '{{ default "" .GOOS | default (OS) }}'
+  GOARCH: '{{ default "" .GOARCH | default (ARCH) }}'
+
+tasks:
+  setup:
+    desc: Install all dependencies
+    cmds:
+      - go mod download
+      - cd {{.WEB_DIR}} && npm ci
+      - npx playwright install chromium
+    status:
+      - test -f go.mod
+      - test -d {{.WEB_DIR}}/node_modules
+
+  dev:
+    desc: Run the development server
+    deps: [generate]
+    cmds:
+      - task: dev:api
+      - task: dev:web
+    vars:
+      DEV_API:
+        sh: go run ./cmd/financeanalysis serve
+      DEV_WEB:
+        sh: cd {{.WEB_DIR}} && npm run dev
+
+  dev:api:
+    desc: Run the Go server
+    cmds:
+      - go run ./cmd/financeanalysis serve
+    env:
+      FA_DATA_DIR: ./data
+      FA_ADDR: 127.0.0.1:8080
+      FA_LOG_LEVEL: debug
+
+  dev:web:
+    desc: Run the Vite development server
+    cmds:
+      - cd {{.WEB_DIR}} && npm run dev
+    env:
+      VITE_API_URL: http://127.0.0.1:8080
+
+  generate:
+    desc: Generate code (sqlc)
+    cmds:
+      - go tool sqlc generate
+    sources:
+      - sqlc.yaml
+      - internal/db/queries/*.sql
+      - internal/db/migrations/*.sql
+    generates:
+      - internal/db/dbq/*.go
+
+  build:web:
+    desc: Build the frontend for production
+    cmds:
+      - cd {{.WEB_DIR}} && npm run build
+    generates:
+      - '{{.DIST_DIR}}/**/*'
+
+  build:
+    desc: Build the application
+    deps: [generate, build:web]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - CGO_ENABLED=0 go build -tags embedui -trimpath -ldflags "-s -w -X main.version={{.VERSION | default "dev"}}" -o {{.BINARY_PATH}} ./cmd/financeanalysis
+    generates:
+      - '{{.BINARY_PATH}}'
+
+  test:go:
+    desc: Run Go tests
+    cmds:
+      - go test -v ./...
+
+  test:web:
+    desc: Run frontend tests
+    cmds:
+      - cd {{.WEB_DIR}} && npm run test
+
+  test:
+    desc: Run all tests
+    deps: [test:go, test:web]
+
+  e2e:
+    desc: Run end-to-end tests
+    deps: [build]
+    cmds:
+      - mkdir -p testdata/e2e
+      - FA_DATA_DIR=testdata/e2e/finance {{.BINARY_PATH}} serve &
+      - sleep 2
+      - npx playwright test
+      - pkill -f {{.BINARY_NAME}} || true
+      - rm -rf testdata/e2e
+
+  lint:go:
+    desc: Lint Go code
+    cmds:
+      - go vet ./...
+      - go tool staticcheck ./...
+      - gofmt -l . | test -z "$(cat -)"
+
+  lint:web:
+    desc: Lint frontend code
+    cmds:
+      - cd {{.WEB_DIR}} && npm run lint
+      - cd {{.WEB_DIR}} && npm run check
+
+  lint:
+    desc: Run all linters
+    deps: [lint:go, lint:web]
+
+  check:generated:
+    desc: Check that generated code is up to date
+    cmds:
+      - go tool sqlc diff
+
+  ci:
+    desc: Run CI checks (lint + test + e2e)
+    deps: [lint, check:generated, test, e2e]
+
+  docker:build:
+    desc: Build the Docker image
+    cmds:
+      - docker build -t financeanalysis .
+
+  docker:up:
+    desc: Start the application with Docker Compose
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} up
+
+  docker:down:
+    desc: Stop the application
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} down
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BIN_DIR}}
+      - rm -rf {{.DIST_DIR}}
+
+  .PHONY:
+    - setup
+    - dev
+    - dev:api
+    - dev:web
+    - generate
+    - build:web
+    - build
+    - test:go
+    - test:web
+    - test
+    - e2e
+    - lint:go
+    - lint:web
+    - lint
+    - check:generated
+    - ci
+    - docker:build
+    - docker:up
+    - docker:down
+    - clean

@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+bin/
+internal/webui/dist/
+web/.svelte-kit/
+web/build/
+
+# Data directory
+data/
+
+# Git
+.git/
+.gitignore
+.gitmodules
+
+# Documentation
+docs/
+*.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+coverage/
+playwright-report/
+test-results/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Go
+*.exe
+*.so
+*.dll
+go.mod
+go.sum

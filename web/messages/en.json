@@ -1,0 +1,28 @@
+{
+  "app": {
+    "name": "FinanceAnalysis"
+  },
+  "home": {
+    "subtitle": "Catalog and visualize your personal spending",
+    "databaseStatus": "Database Status",
+    "ready": "Ready",
+    "missing": "Not created",
+    "error": "Error",
+    "schemaVersion": "Schema: {version}",
+    "createDatabase": "Create Database"
+  },
+  "nav": {
+    "statements": "Statements",
+    "categorize": "Categorize",
+    "rules": "Rules",
+    "visualize": "Visualize",
+    "import": "Import",
+    "settings": "Settings"
+  },
+  "error": {
+    "unknown": "An unknown error occurred",
+    "network": "Network error. Please check your connection.",
+    "databaseExists": "Database already exists",
+    "databaseMissing": "Database not found. Please create a database first."
+  }
+}

@@ -1,0 +1,46 @@
+# Dependencies
+web/node_modules/
+
+# Build outputs
+bin/
+internal/webui/dist/
+web/.svelte-kit/
+web/build/
+
+# Data directory (bind-mounted in Docker)
+data/
+
+# Database files outside testdata
+a*.sqlite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test outputs
+coverage/
+playwright-report/
+test-results/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Go
+*.exe
+*.so
+*.dll
