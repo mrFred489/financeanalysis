@@ -1,8 +1,7 @@
-import { paraglide } from '@paraglide/sveltekit';
-import type { Locale } from '@paraglide/sveltekit';
+import { locales } from '../paraglide/runtime.js';
 
-export const i18n = paraglide;
+export { locales };
 
-export function getLocales(): Locale[] {
-	return ['en'];
+export function getLocales() {
+	return locales;
 }
