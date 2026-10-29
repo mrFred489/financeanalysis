@@ -87,7 +87,11 @@ func runServe() error {
 	}
 
 	if dbExists {
-		if err := db.Migrate(ctx, nil, backupDir); err != nil {
+		applicationDB, err := db.GetDB()
+		if err != nil {
+			return fmt.Errorf("failed to get database: %w", err)
+		}
+		if err := db.Migrate(ctx, applicationDB, backupDir); err != nil {
 			if errors.Is(err, db.ErrSchemaTooNew) {
 				return fmt.Errorf("fatal: %w. Please upgrade the application.", err)
 			}
