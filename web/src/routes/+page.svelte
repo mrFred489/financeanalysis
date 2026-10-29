@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { i18n } from '$lib/i18n';
+	import { onMount } from 'svelte';
 
 	let dbStatus: 'missing' | 'ready' | 'error' = 'missing';
 	let schemaVersion: number | null = null;
 	let error: string | null = null;
+
+	onMount(() => {
+		checkStatus();
+	});
 
 	async function checkStatus() {
 		try {
@@ -127,11 +132,6 @@
 		</div>
 	</div>
 </div>
-
-<script>
-	// Check status on load
-	checkStatus();
-</script>
 
 <style>
 	.status :global(span) {
