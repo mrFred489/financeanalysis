@@ -36,6 +36,9 @@ WORKDIR /app
 # Copy the binary
 COPY --from=go-builder /financeanalysis /financeanalysis
 
+# Copy the frontend files
+COPY --from=go-builder /app/internal/webui/dist ./internal/webui/dist
+
 # Set environment variables
 ENV FA_DATA_DIR=/data
 ENV FA_ADDR=0.0.0.0:8080
