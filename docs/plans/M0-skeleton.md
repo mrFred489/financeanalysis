@@ -9,18 +9,17 @@ A runnable, tested, end-to-end skeleton with no business features:
 - One Go binary serves a JSON API and the embedded Svelte SPA.
 - A SQLite database is created in the data directory, migrated with goose, and queried via sqlc.
 - The same commands work on **Linux and Windows**: native via Taskfile, and via Docker.
-- CI runs all checks on both operating systems.
 - The migration guide is written.
+- **CI is postponed to later**.
 
 ## Decisions (confirmed)
 
 | # | Decision |
 |---|---|
-| D1 | The repository is hosted on GitHub; CI uses GitHub Actions. All checks are also runnable locally with `task ci`. |
-| D2 | Go module path: `github.com/mrFred489/financeanalysis`. |
-| D3 | Tailwind CSS v4 is used for styling. |
-| D4 | Default port 8080. The Vite dev server runs on 5173. |
-| D5 | Each milestone creates only the tables it needs. M0 creates `setting` and `category`; later milestones add theirs via new migrations. |
+| D1 | Go module path: `github.com/mrFred489/financeanalysis`. |
+| D2 | Tailwind CSS v4 is used for styling. |
+| D3 | Default port 8080. The Vite dev server runs on 5173. |
+| D4 | Each milestone creates only the tables it needs. M0 creates `setting` and `category`; later milestones add theirs via new migrations. |
 
 ## Prerequisites (developer machine)
 
@@ -41,7 +40,6 @@ A runnable, tested, end-to-end skeleton with no business features:
 ├─ sqlc.yaml
 ├─ go.mod / go.sum
 ├─ .gitignore / .gitattributes / .editorconfig / .dockerignore
-├─ .github/workflows/ci.yml
 ├─ cmd/financeanalysis/main.go  # entrypoint, flags, subcommands (serve, healthcheck)
 ├─ internal/
 │  ├─ config/                   # env parsing
@@ -263,15 +261,7 @@ Use `{{exeExt}}` for binary names and Task's built-in cross-platform commands; n
 
 All tests use temp directories; nothing touches `./data`.
 
-### 10. CI (GitHub Actions)
-
-- **Job `ci`**, matrix `ubuntu-latest` and `windows-latest`: set up Go and Node with caching, then `go tool task setup`, then `go tool task ci`.
-- **Job `docker`** (Ubuntu): build the image, run it with a temp volume, poll `/api/status`, then `POST /api/database` and assert `ready`.
-- No `-race` (it needs cgo on Windows). It can be added for the Ubuntu job only, later.
-
-**Done when:** both jobs are green on a pull request.
-
-### 11. Migration guide (`docs/migrations.md`)
+### 10. Migration guide (`docs/migrations.md`)
 
 Written per PRD section 9.2:
 - One logical change per migration; naming convention `NNNNN_verb_object.sql`.
@@ -289,8 +279,6 @@ Written per PRD section 9.2:
 ## Definition of done (M0)
 
 - [ ] `task setup && task dev` gives a working app with hot reload of the frontend.
-- [ ] `task ci` is green locally on Windows and Linux.
-- [ ] GitHub Actions is green for the matrix and the Docker job.
 - [ ] `docker compose up` works on Windows and Linux; the DB file is on the host in `./data` and is a single file (no `-wal`/`-shm`).
 - [ ] The browser makes no requests to anything but the app's own origin (verified in devtools; enforced by CSP).
 - [ ] `docs/migrations.md` is written.
