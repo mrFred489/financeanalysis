@@ -50,7 +50,7 @@
 		<div class="text-center">
 			<h1 class="text-3xl font-bold text-gray-900">FinanceAnalysis</h1>
 			<p class="mt-2 text-gray-600">
-				{$i18n.t('home.subtitle')}
+				Welcome! {$i18n.t('home.subtitle')}
 			</p>
 		</div>
 
