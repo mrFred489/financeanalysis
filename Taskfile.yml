@@ -6,7 +6,7 @@ vars:
   WEBUI_DIR: internal/webui
   DIST_DIR: '{{.WEBUI_DIR}}/dist'
   BINARY_NAME: financeanalysis
-  BINARY_PATH: '{{.BIN_DIR}}/{{.BINARY_NAME}}{{if eq .GOOS "windows" ".exe"}}'
+  BINARY_PATH: '{{.BIN_DIR}}/{{.BINARY_NAME}}'
   COMPOSE_FILE: compose.yaml
 
 env:
@@ -75,7 +75,7 @@ tasks:
     deps: [generate, build:web]
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - CGO_ENABLED=0 go build -tags embedui -trimpath -ldflags "-s -w -X main.version={{.VERSION | default "dev"}}" -o {{.BINARY_PATH}} ./cmd/financeanalysis
+      - CGO_ENABLED=0 go build -tags embedui -trimpath -ldflags "-s -w -X main.version={{.VERSION | default `dev`}}" -o {{.BINARY_PATH}} ./cmd/financeanalysis
     generates:
       - '{{.BINARY_PATH}}'
 
