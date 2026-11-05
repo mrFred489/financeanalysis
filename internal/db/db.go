@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	initDB     sync.Once
-	initDBErr  error
+	mu         sync.RWMutex
 	globalDB   *sql.DB
 	globalPath string
 )
@@ -54,10 +53,37 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// InitDB opens the database at the given path and makes it the global handle.
+func InitDB(ctx context.Context, path string) error {
+	d, err := Open(ctx, path)
+	if err != nil {
+		return err
+	}
+	SwapDB(d, path)
+	return nil
+}
+
+// SwapDB replaces the global database handle, closing the previous one.
+func SwapDB(d *sql.DB, path string) {
+	mu.Lock()
+	old := globalDB
+	globalDB = d
+	globalPath = path
+	mu.Unlock()
+	if old != nil && old != d {
+		old.Close()
+	}
+}
+
 // Close closes the global database connection.
 func Close() error {
+	mu.Lock()
+	defer mu.Unlock()
 	if globalDB != nil {
-		return globalDB.Close()
+		err := globalDB.Close()
+		globalDB = nil
+		globalPath = ""
+		return err
 	}
 	return nil
 }
@@ -65,28 +91,17 @@ func Close() error {
 // GetDB returns the global database connection.
 // It must be initialized via InitDB first.
 func GetDB() (*sql.DB, error) {
-	if initDBErr != nil {
-		return nil, fmt.Errorf("database not initialized: %w", initDBErr)
+	mu.RLock()
+	defer mu.RUnlock()
+	if globalDB == nil {
+		return nil, fmt.Errorf("database not initialized")
 	}
 	return globalDB, nil
 }
 
-// InitDB initializes the global database connection.
-// It should be called once during application startup.
-func InitDB(ctx context.Context, path string) error {
-	initDB.Do(func() {
-		var err error
-		globalDB, err = Open(ctx, path)
-		if err != nil {
-			initDBErr = err
-			return
-		}
-		globalPath = path
-	})
-	return initDBErr
-}
-
 // GetDBPath returns the path of the global database.
 func GetDBPath() string {
+	mu.RLock()
+	defer mu.RUnlock()
 	return globalPath
 }

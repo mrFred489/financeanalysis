@@ -1,0 +1,9 @@
+node_modules/
+build/
+internal/
+.svelte-kit/
+src/paraglide/
+package-lock.json
+project.inlang/
+playwright-report/
+test-results/

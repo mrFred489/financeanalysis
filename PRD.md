@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Draft v1 |
-| Date | 2026-10-29 |
+| Status | Draft v2 |
+| Date | 2026-11-05 |
 | Owner | FRLA |
 
 ## 1. Summary
@@ -125,7 +125,7 @@ erDiagram
 |---|---|
 | `account` | `id`, `name` (unique), `account_number` (optional, reference only), `sort_order`, `archived`, `created_at` |
 | `import_batch` | `id`, `account_id`, `file_name`, `file_sha256`, `imported_at`, `line_count`, `duplicate_count`, `undone_at` |
-| `statement_line` | `id`, `account_id`, `import_id`, `booking_date`, `message`, `amount_minor`, `balance_minor`, `currency`, `file_row`, `seq` (chronological order within the import), `occurrence`, `subcategory_id` (nullable), `source` (`none`/`rule`/`manual`/`transfer`/`conflict`), `rule_id` (nullable), `spread_months` (default 1) |
+| `statement_line` | `id`, `account_id`, `import_id`, `booking_date`, `transaction_date` (nullable), `value_date` (nullable), `message`, `amount_minor`, `balance_minor` (nullable; the current bank format has no running balance), `currency`, `bank_ref` (nullable), `counterparty_account` (nullable), `file_row`, `seq` (chronological order within the import), `occurrence`, `subcategory_id` (nullable), `source` (`none`/`rule`/`manual`/`transfer`/`conflict`), `rule_id` (nullable), `spread_months` (default 1) |
 | `category` | `id`, `key` (`income`, `fixed`, `variable`, `savings`), `name`, `color`. Seeded by migration; not user-creatable. |
 | `subcategory` | `id`, `category_id`, `name` (unique per category), `color`, `icon` (nullable), `hotkey` (nullable, unique), `sort_order` |
 | `rule` | `id`, `name`, `pattern`, `direction` (`in`/`out`/`both`), `subcategory_id`, `enabled`, `created_at`, `updated_at` |
@@ -137,7 +137,7 @@ erDiagram
 | `action_change` | `action_id`, `entity`, `entity_id`, `before_json`, `after_json`. Row-level before/after state. |
 | `setting` | `key`, `value` |
 
-Uniqueness of lines (duplicate detection) is enforced by a unique index on `(account_id, booking_date, amount_minor, balance_minor, message, occurrence)`. `occurrence` is the 1-based index among identical tuples within a file and only matters for edge cases such as zero-amount lines.
+Uniqueness of lines (duplicate detection) is enforced by a unique index on `(account_id, booking_date, amount_minor, message, occurrence)` (no balance: the current bank format has no running balance; `bank_ref` is stored for traceability). `occurrence` is the 1-based index among identical tuples within a file and only matters for edge cases such as zero-amount lines.
 
 ## 7. Functional requirements
 
@@ -156,25 +156,45 @@ Requirement IDs are used for tracking. **Must** = v1, **Should** = v1 if feasibl
 
 ### 7.2 Import (IMP)
 
-**Bank CSV format (initial bank):**
+**Bank CSV format (initial bank, v2 — confirmed from a real export, 2026-11-05):**
 
-- UTF-8 with BOM, no header row, `;` separated.
-- Columns: `date;message;amount;running balance;currency`
-- Example: `02-05-2025;KREDSLøB A/S Aftalenr. 993695201;-1.357,97;47.911,77;DKK`
-- Date `dd-mm-yyyy`. Amounts use `.` as thousands separator and `,` as decimal separator.
-- Rows are ordered **newest first**. Chronological order within a day is therefore the reverse of file order.
-- The bank never changes the message of a booked line, so the duplicate key (section 6) is stable across overlapping exports.
+- UTF-8 (a BOM is tolerated and stripped), no header row, `;` separated, standard CSV quoting (messages containing `,` are quoted).
+- Fixed **16 columns** (0-indexed); every row starts with an empty column 0:
+
+| # | Example | Meaning |
+|---|---|---|
+| 0 | *(empty)* | leading column, always empty |
+| 1 | `FOETEX SKEJBY, AARHUS N ` | message |
+| 2 | `9395 0010049288` | account number — the exported account on ordinary rows, one side of the movement on transfer rows |
+| 3 | *(empty, or account number)* | counterparty account — only set on internal transfers |
+| 4 | `-485,14` | amount, signed, Danish number format |
+| 5 | *(empty in this export)* | running balance (reserved; parsed when present) |
+| 6 | *(empty in this export)* | currency (reserved; empty means `DKK`) |
+| 7 | `05-11-2026` | transaction date (`dd-mm-yyyy`), e.g. card purchase date |
+| 8 | `05-11-2026` | **booking date** (`dd-mm-yyyy`); the file is sorted newest-first on this column |
+| 9 | `05-11-2026` | value date (`dd-mm-yyyy`) |
+| 10 | `0248583685` | bank reference, unique per booked line |
+| 11 | `36281874092` or empty | secondary reference (e.g. MobilePay transaction id) |
+| 12–13 | *(empty)* | reserved |
+| 14 | `MobilePay Vennelyst Jordbrug` or empty | extra text (repeats the message on MobilePay rows) |
+| 15 | *(empty)* | reserved |
+
+- Example row: `;"FOETEX SKEJBY, AARHUS N ";9395 0010049288;;-485,14;;;05-11-2026;05-11-2026;05-11-2026;0248583685;;;;;`
+- Internal transfers appear in one account's file with both account numbers, e.g. `;Frederik;9395 0010049202;9395 0010049288;4.500,00;;;30-10-2026;30-10-2026;30-10-2026;3930627902;;;;;`
+- Dates are `dd-mm-yyyy`. Amounts use `.` as thousands separator and `,` as decimal separator.
+- Rows are ordered **newest first by booking date (column 8)**. Chronological order within a day is therefore the reverse of file order.
+- The bank never changes a booked line, so the duplicate key (section 6) is stable across overlapping exports.
 
 | ID | Priority | Requirement |
 |---|---|---|
 | IMP-1 | Must | The user selects one file and the target account, then uploads. |
-| IMP-2 | Must | The parser strips the BOM and handles standard CSV quoting. To tolerate `;` inside messages, it reads the first field as date, the last three as amount/balance/currency, and joins everything in between as the message. |
+| IMP-2 | Must | The parser strips the BOM, handles standard CSV quoting, and reads the fixed 16-column layout above: column 1 is the message, columns 2–15 map as specified, and column 8 is the booking date. Rows with more than 16 fields (an unquoted `;` in the message) are tolerated by joining the surplus fields back into the message; rows with fewer than 16 fields are parse errors. Columns 5 (balance) and 6 (currency) are optional: an empty balance is stored as NULL, an empty currency defaults to `DKK`. |
 | IMP-3 | Must | Rows that fail parsing are reported with row number and reason. |
-| IMP-4 | Must | Rows with a currency other than `DKK` are reported and excluded. |
+| IMP-4 | Must | Rows with a currency other than `DKK` (column 6) are reported and excluded. The current export leaves column 6 empty, so all rows are treated as `DKK`. |
 | IMP-5 | Must | **Preview step** before committing shows: date range, number of new lines, number of duplicates (already imported), parse errors, and warnings. Nothing is written until the user confirms. |
 | IMP-6 | Must | Duplicate lines (same unique key, see section 6) are skipped, so overlapping exports are safe. |
-| IMP-7 | Must | Balance continuity check: for each row and the row below it (the previous transaction), `balance(row) = balance(row below) + amount(row)`. Gaps are shown as warnings. |
-| IMP-8 | Must | Account sanity check: if the file's balances do not connect to the existing lines of the selected account (the oldest new row's `balance - amount` should equal the balance of the latest existing line before it, and likewise at the newest end), warn "This file may belong to a different account". |
+| IMP-7 | Must | Balance continuity check, only for files that carry a balance in column 5: for each row and the row below it (the previous transaction), `balance(row) = balance(row below) + amount(row)`. Gaps are shown as warnings. The current bank export has no balance column, so the check is skipped and the preview notes that. |
+| IMP-8 | Must | Account sanity check: if the selected account has an `account_number`, verify that it appears in column 2 or 3 of the file's rows; if not, warn "This file may belong to a different account". (The earlier balance-seam variant of this check is dropped: the current format has no running balance.) |
 | IMP-8a | Must | Lines are stored with a chronological sequence (reverse of file order), so lines on the same day sort and display in the order they were booked. |
 | IMP-9 | Must | Re-uploading a file with an identical SHA-256 to a previous import shows a warning. |
 | IMP-10 | Must | A database backup is taken automatically before commit. |
@@ -366,3 +386,4 @@ A written guide is a required deliverable. It must cover at least:
 | 2 | Color scheme | Shades per hue become hard to distinguish beyond ~6 subcategories. Iterate in M6. |
 | 3 | Docker Desktop on Windows | Bind-mount I/O is slower; acceptable at this data volume. `journal_mode=DELETE` avoids WAL locking issues. |
 | 4 | Same-day-only transfer matching | Sufficient for a single bank. Revisit (± N days) when other banks are supported. |
+| 5 | Column semantics of the new CSV format | Columns 5/6 and the names of the three date columns (7/8/9) are inferred from a headerless snippet; column 8 is confirmed as the sort/booking column. Verify against a full export with headers when available. |

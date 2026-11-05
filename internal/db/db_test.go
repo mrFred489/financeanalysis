@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,9 +84,133 @@ func TestMigrate(t *testing.T) {
 		t.Errorf("expected 4 categories, got %d", count)
 	}
 
+	// Verify M1 tables exist (migration 00002)
+	for _, table := range []string{"account", "subcategory", "import_batch", "statement_line"} {
+		var name string
+		if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
+			t.Errorf("expected table %q to exist: %v", table, err)
+		}
+	}
+
+	// Verify default subcategories were seeded (2+3+5+2 = 12)
+	var subCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM subcategory").Scan(&subCount); err != nil {
+		t.Fatalf("failed to count subcategories: %v", err)
+	}
+	if subCount != 12 {
+		t.Errorf("expected 12 seeded subcategories, got %d", subCount)
+	}
+
+	// Verify schema version
+	version, err := SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("failed to get schema version: %v", err)
+	}
+	if version != CurrentSchemaVersion {
+		t.Errorf("expected schema version %d, got %d", CurrentSchemaVersion, version)
+	}
+
 	// Verify integrity
 	if err := integrityCheck(context.Background(), db); err != nil {
 		t.Fatalf("integrity check failed: %v", err)
+	}
+}
+
+func TestMigrateFromV1(t *testing.T) {
+	// Simulate a database created by the previous release (schema version 1 only).
+	tmpDir, err := os.MkdirTemp("", "financeanalysis-migrate-v1-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.sqlite")
+	backupDir := filepath.Join(tmpDir, "backups")
+
+	if err := InitDB(context.Background(), dbPath); err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	db, err := GetDB()
+	if err != nil {
+		t.Fatalf("failed to get DB: %v", err)
+	}
+	defer db.Close()
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("failed to load migrations: %v", err)
+	}
+	// Apply only the first migration, as the old binary would have.
+	if err := applyMigration(context.Background(), db, migrations[0]); err != nil {
+		t.Fatalf("failed to apply migration 1: %v", err)
+	}
+
+	// A backup must be taken before migrating the existing DB
+	if err := Migrate(context.Background(), db, backupDir); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	backupFiles, err := filepath.Glob(filepath.Join(backupDir, "*.sqlite"))
+	if err != nil {
+		t.Fatalf("failed to list backups: %v", err)
+	}
+	if len(backupFiles) == 0 {
+		t.Errorf("expected a pre-migrate backup to be created")
+	}
+
+	version, err := SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("failed to get schema version: %v", err)
+	}
+	if version != CurrentSchemaVersion {
+		t.Errorf("expected schema version %d, got %d", CurrentSchemaVersion, version)
+	}
+
+	var subCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM subcategory").Scan(&subCount); err != nil {
+		t.Fatalf("failed to count subcategories: %v", err)
+	}
+	if subCount != 12 {
+		t.Errorf("expected 12 seeded subcategories, got %d", subCount)
+	}
+	if err := integrityCheck(context.Background(), db); err != nil {
+		t.Fatalf("integrity check failed: %v", err)
+	}
+}
+
+func TestMigrateSchemaTooNew(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "financeanalysis-too-new-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.sqlite")
+	backupDir := filepath.Join(tmpDir, "backups")
+
+	if err := InitDB(context.Background(), dbPath); err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	db, err := GetDB()
+	if err != nil {
+		t.Fatalf("failed to get DB: %v", err)
+	}
+	defer db.Close()
+
+	if err := Migrate(context.Background(), db, backupDir); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	// Pretend the database was created by a newer binary
+	if _, err := db.Exec("INSERT INTO goose_db_version (version_id, is_applied) VALUES (999, 1)"); err != nil {
+		t.Fatalf("failed to bump version: %v", err)
+	}
+
+	err = Migrate(context.Background(), db, backupDir)
+	if err == nil {
+		t.Fatalf("expected ErrSchemaTooNew")
+	}
+	if !errors.Is(err, ErrSchemaTooNew) {
+		t.Errorf("expected ErrSchemaTooNew, got %v", err)
 	}
 }
 
@@ -147,7 +272,7 @@ func TestBackupRetention(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	backupDir := filepath.Join(tmpDir, "backups")
-	
+
 	// Create backup directory
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		t.Fatalf("failed to create backup dir: %v", err)

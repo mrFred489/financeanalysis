@@ -15,7 +15,7 @@ export function formatMessage(message: string, params?: Record<string, unknown>)
 const messages = { en: enMessages };
 
 export const locales = ['en'];
-export const setLocale = (locale: string) => {};
+export const setLocale = (_locale: string) => {};
 
 export function getLocales() {
 	return locales;

@@ -93,14 +93,14 @@ func runServe() error {
 		}
 		if err := db.Migrate(ctx, applicationDB, backupDir); err != nil {
 			if errors.Is(err, db.ErrSchemaTooNew) {
-				return fmt.Errorf("fatal: %w. Please upgrade the application.", err)
+				return fmt.Errorf("fatal: %w; please upgrade the application", err)
 			}
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
 	}
 
 	// Create HTTP server
-	srv, err := server.NewServer(cfg.Addr, backupDir)
+	srv, err := server.NewServer(cfg.Addr, dataDir)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
@@ -144,7 +144,7 @@ func runHealthcheck() error {
 	url := fmt.Sprintf("http://%s/api/status", cfg.Addr)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

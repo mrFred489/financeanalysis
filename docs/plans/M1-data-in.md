@@ -58,6 +58,8 @@ sqlc queries to add in `internal/db/queries/`:
 
 ### 2. CSV parser package `internal/csvparse`
 
+> **Update 2026-11-05 — format changed:** the bank's real CSV export does not match the layout assumed below. PRD §7.2 now specifies the actual 16-column format (no running balance, three dates, two account columns), and the parser/import/fixture work for it is planned in [csv-format-v2.md](csv-format-v2.md). Treat step 2, the parsing/checks parts of step 3, and the CSV fixtures in step 10 as superseded by that plan.
+
 - `Parse(r io.Reader) ([]RawLine, []ParseError, error)`:
   - Strip UTF-8 BOM.
   - Split on `\n`, handle `\r\n`.
@@ -197,7 +199,7 @@ Add all new UI strings to `web/messages/en.json` under namespaces: `welcome.*`, 
 - Vitest: import preview component rendering, statements filter state → URL serialization.
 - Playwright e2e: welcome wizard → import → statements → undo flow.
 
-**Fixtures:** add anonymized sample CSV files to `testdata/fixtures/` covering: normal file, file with BOM + `;` in message, file with parse errors, file with non-DKK rows, overlapping exports (for dedup), file with balance gaps.
+**Fixtures:** add anonymized sample CSV files to `testdata/fixtures/` covering: normal file, file with BOM + `;` in message, file with parse errors, file with non-DKK rows, overlapping exports (for dedup), file with balance gaps. Since 2026-11-05 these must be in the v2 16-column format — see [csv-format-v2.md](csv-format-v2.md) step 5.
 
 ## Definition of done (M1)
 

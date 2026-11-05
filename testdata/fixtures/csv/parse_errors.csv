@@ -1,0 +1,7 @@
+01-02-2025;OK row;-10,00;990,00;DKK
+32-13-2025;Bad date;-10,00;1.000,00;DKK
+02-02-2025;Bad amount;abc;1.000,00;DKK
+03-02-2025;Too few fields;-10,00
+04-02-2025;Bad balance;-10,00;xyz;DKK
+05-02-2025;Too many decimals;-10,005;1.000,00;DKK
+06-02-2025;OK row 2;-20,00;1.010,00;DKK

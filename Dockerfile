@@ -23,7 +23,7 @@ RUN go mod download
 COPY . .
 
 # Copy built frontend from node-builder
-COPY --from=node-builder /app/internal/webui/dist ./internal/webui/dist
+COPY --from=node-builder /app/build ./internal/webui/dist
 
 # Build the Go binary
 RUN CGO_ENABLED=0 GOOS=linux go build -tags embedui -trimpath -ldflags "-s -w -X main.version=${VERSION:-dev}" -o /financeanalysis ./cmd/financeanalysis

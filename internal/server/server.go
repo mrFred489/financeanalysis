@@ -6,67 +6,116 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mrFred489/financeanalysis/internal/db"
+	"github.com/mrFred489/financeanalysis/internal/imports"
+	"github.com/mrFred489/financeanalysis/internal/webui"
 )
 
 // ErrNotFound is returned when a resource is not found.
 var ErrNotFound = errors.New("not found")
 
+// maxUploadBytes is the body limit for file-upload routes (50 MiB).
+const maxUploadBytes = 50 << 20
+
+// maxDefaultBytes is the default body limit for all other routes (1 MiB).
+const maxDefaultBytes = 1 << 20
+
 // Server holds the HTTP server state.
 type Server struct {
-	addr      string
-	backupDir string
-	db        *sql.DB
+	addr          string
+	dataDir       string
+	dbPath        string
+	backupDir     string
+	previewSecret []byte
+
+	mu sync.RWMutex
+	db *sql.DB
 }
 
-// NewServer creates a new HTTP server.
-func NewServer(addr, backupDir string) (*http.Server, error) {
-	srv := &Server{
+// NewServer creates a new HTTP server serving the API and the embedded SPA.
+func NewServer(addr, dataDir string) (*http.Server, error) {
+	s := &Server{
 		addr:      addr,
-		backupDir: backupDir,
+		dataDir:   dataDir,
+		dbPath:    filepath.Join(dataDir, "finance.sqlite"),
+		backupDir: filepath.Join(dataDir, "backups"),
+	}
+	secret, err := imports.NewSecret()
+	if err != nil {
+		return nil, err
+	}
+	s.previewSecret = secret
+
+	// Reuse the global handle if main already opened the database.
+	if d, err := db.GetDB(); err == nil {
+		s.db = d
 	}
 
-	// Get database
-	if dbConn, err := db.GetDB(); err == nil {
-		srv.db = dbConn
-	} else {
-		slog.Warn("database not available", "error", err)
-	}
-
-	// Create router with middleware
 	mux := http.NewServeMux()
-	
-	// Set up routes
-	srv.setupRoutes(mux)
-
-	// Wrap with middleware
-	handler := srv.applyMiddleware(mux)
+	s.setupRoutes(mux)
+	handler := s.applyMiddleware(mux)
 
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		MaxHeaderBytes:    1 << 20, // 1 MiB
+		MaxHeaderBytes:    1 << 20,
 	}, nil
 }
 
 func (s *Server) setupRoutes(mux *http.ServeMux) {
-	// API routes
+	// Status and database lifecycle
 	mux.Handle("GET /api/status", s.handleStatus())
 	mux.Handle("POST /api/database", s.handleCreateDatabase())
+	mux.Handle("POST /api/database/upload", s.handleDatabaseUpload())
+	mux.Handle("GET /api/database/download", s.handleDatabaseDownload())
+	mux.Handle("POST /api/database/replace", s.handleDatabaseReplace())
+	mux.Handle("GET /api/backups", s.handleListBackups())
+	mux.Handle("POST /api/backups/{name}/restore", s.handleRestoreBackup())
+
+	// Accounts
+	mux.Handle("GET /api/accounts", s.handleListAccounts())
+	mux.Handle("POST /api/accounts", s.handleCreateAccount())
+	mux.Handle("GET /api/accounts/{id}", s.handleGetAccount())
+	mux.Handle("PUT /api/accounts/{id}", s.handleUpdateAccount())
+	mux.Handle("DELETE /api/accounts/{id}", s.handleDeleteAccount())
+
+	// Categories and subcategories
+	mux.Handle("GET /api/categories", s.handleListCategories())
+	mux.Handle("GET /api/subcategories", s.handleListSubcategories())
+	mux.Handle("POST /api/subcategories", s.handleCreateSubcategory())
+	mux.Handle("PUT /api/subcategories/{id}", s.handleUpdateSubcategory())
+	mux.Handle("DELETE /api/subcategories/{id}", s.handleDeleteSubcategory())
+
+	// Imports
+	mux.Handle("POST /api/imports/preview", s.handleImportPreview())
+	mux.Handle("POST /api/imports", s.handleImportCommit())
+	mux.Handle("POST /api/imports/{id}/undo", s.handleImportUndo())
+	mux.Handle("GET /api/imports", s.handleListImports())
+	mux.Handle("GET /api/imports/{id}", s.handleGetImport())
+
+	// Statement lines
+	mux.Handle("GET /api/lines", s.handleListLines())
+	mux.Handle("GET /api/lines/{id}", s.handleGetLine())
+
+	// Settings
+	mux.Handle("GET /api/settings", s.handleGetSettings())
+	mux.Handle("PUT /api/settings", s.handleUpdateSettings())
 
 	// Catch-all API routes
-	mux.Handle("GET /api/*", s.handleAPINotFound())
-	mux.Handle("POST /api/*", s.handleAPINotFound())
-	mux.Handle("PUT /api/*", s.handleAPINotFound())
-	mux.Handle("DELETE /api/*", s.handleAPINotFound())
+	mux.Handle("GET /api/", s.handleAPINotFound())
+	mux.Handle("POST /api/", s.handleAPINotFound())
+	mux.Handle("PUT /api/", s.handleAPINotFound())
+	mux.Handle("DELETE /api/", s.handleAPINotFound())
 
 	// SPA routes - serve static files or fallback to index.html
 	mux.Handle("/", s.handleSPA())
@@ -75,77 +124,63 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 func (s *Server) applyMiddleware(next http.Handler) http.Handler {
 	chain := next
 	chain = securityHeadersMiddleware(chain)
-	chain = maxBytesMiddleware(1<<20, chain) // 1 MiB
+	chain = maxBytesMiddleware(chain)
 	chain = loggingMiddleware(chain)
 	return chain
+}
+
+// getDB returns the current database handle (nil when no database exists yet).
+func (s *Server) getDB() *sql.DB {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.db
+}
+
+// setDB replaces the current database handle.
+func (s *Server) setDB(d *sql.DB) {
+	s.mu.Lock()
+	s.db = d
+	s.mu.Unlock()
+}
+
+// requireDB returns the database handle, writing a 503 error response when
+// no database has been created yet.
+func (s *Server) requireDB(w http.ResponseWriter, r *http.Request) *sql.DB {
+	d := s.getDB()
+	if d == nil || !dbReady(d) {
+		writeError(w, http.StatusServiceUnavailable, APIError{
+			Code:    "database_missing",
+			Message: "No database yet. Create a new one or upload an existing one from the welcome page.",
+		})
+		return nil
+	}
+	return d
+}
+
+// dbReady reports whether the database has been migrated (category table exists).
+func dbReady(d *sql.DB) bool {
+	var count int
+	return d.QueryRow("SELECT COUNT(*) FROM category").Scan(&count) == nil
 }
 
 func (s *Server) handleStatus() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := &StatusResponse{
-			Version: version,
+			Version:  version,
 			Database: "missing",
 		}
 
-		if s.db != nil {
-			// Check if database is ready
-			var count int
-			if err := s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM category").Scan(&count); err == nil {
-				status.Database = "ready"
-				// Get schema version
-				var schemaVersion int64
-				if err := s.db.QueryRowContext(r.Context(), "PRAGMA schema_version").Scan(&schemaVersion); err == nil {
-					status.SchemaVersion = &schemaVersion
-				}
+		if d := s.getDB(); d != nil && dbReady(d) {
+			status.Database = "ready"
+			if v, err := db.SchemaVersion(r.Context(), d); err == nil {
+				status.SchemaVersion = &v
+			}
+			if accounts, err := listAccounts(r.Context(), d); err == nil {
+				status.AccountsConfigured = len(accounts) > 0
 			}
 		}
 
 		writeJSON(w, http.StatusOK, status)
-	}
-}
-
-func (s *Server) handleCreateDatabase() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Check if database already exists
-		if s.db != nil {
-			var count int
-			if err := s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM category").Scan(&count); err == nil && count > 0 {
-				writeError(w, http.StatusConflict, APIError{
-					Code:    "database_exists",
-					Message: "Database already exists",
-				})
-				return
-			}
-		}
-
-		// Create and migrate database
-		ctx := r.Context()
-		dbPath := db.GetDBPath()
-
-		// Open database (should already exist from main.go)
-		if s.db == nil {
-			var err error
-			s.db, err = db.Open(ctx, dbPath)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, APIError{
-					Code:    "database_open_failed",
-					Message: err.Error(),
-				})
-				return
-			}
-		}
-
-		// Run migrations
-		if err := db.Migrate(ctx, s.db, s.backupDir); err != nil {
-			writeError(w, http.StatusInternalServerError, APIError{
-				Code:    "migration_failed",
-				Message: err.Error(),
-			})
-			return
-		}
-
-		// Return success
-		writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
 	}
 }
 
@@ -160,15 +195,14 @@ func (s *Server) handleAPINotFound() http.HandlerFunc {
 
 func (s *Server) handleSPA() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Try to serve static files first
-		path := r.URL.Path
-		if path == "/" {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
 			path = "index.html"
 		}
 
 		// Clean the path to prevent directory traversal
-		cleanPath := filepath.Clean(path)
-		if strings.HasPrefix(cleanPath, "..") {
+		cleanPath := path
+		if strings.Contains(cleanPath, "..") {
 			writeError(w, http.StatusBadRequest, APIError{
 				Code:    "bad_request",
 				Message: "Invalid path",
@@ -176,60 +210,59 @@ func (s *Server) handleSPA() http.HandlerFunc {
 			return
 		}
 
-		// Try to serve from dist directory
-		distPath := filepath.Join("internal", "webui", "dist", cleanPath)
-		if _, err := os.Stat(distPath); err == nil {
-			// File exists, serve it
-			content, err := os.ReadFile(distPath)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, APIError{
-					Code:    "read_error",
-					Message: err.Error(),
-				})
+		// Try to serve from the embedded dist directory
+		filePath := "dist/" + cleanPath
+		if f, err := webui.Dist.Open(filePath); err == nil {
+			defer f.Close()
+			info, err := f.Stat()
+			if err == nil && !info.IsDir() {
+				content, err := readAll(f)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, APIError{Code: "read_error", Message: err.Error()})
+					return
+				}
+				w.Header().Set("Content-Type", getContentType(cleanPath))
+				if strings.HasPrefix(cleanPath, "_app/immutable/") {
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else {
+					w.Header().Set("Cache-Control", "no-cache")
+				}
+				w.Write(content)
 				return
 			}
-
-			// Determine content type
-			contentType := getContentType(cleanPath)
-			w.Header().Set("Content-Type", contentType)
-
-			// Set cache headers
-			if strings.HasPrefix(cleanPath, "_app/immutable/") {
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			} else {
-				w.Header().Set("Cache-Control", "no-cache")
-			}
-
-			w.Write(content)
-			return
 		}
 
 		// Fallback to index.html for client-side routing
-		indexPath := filepath.Join("internal", "webui", "dist", "index.html")
-		if _, err := os.Stat(indexPath); err == nil {
-			content, err := os.ReadFile(indexPath)
+		if f, err := webui.Dist.Open("dist/index.html"); err == nil {
+			defer f.Close()
+			content, err := readAll(f)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, APIError{
-					Code:    "read_error",
-					Message: err.Error(),
-				})
+				writeError(w, http.StatusInternalServerError, APIError{Code: "read_error", Message: err.Error()})
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
 			w.Write(content)
 			return
 		}
 
-		// No frontend built yet - return a simple message
+		// No frontend built (no embedui tag) - return a simple message
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `<html><body><h1>FinanceAnalysis</h1><p>Frontend not built yet. Run <code>task build:web</code>.</p></body></html>`)
+		fmt.Fprint(w, `<html><body><h1>FinanceAnalysis</h1><p>Frontend not built yet. Run <code>task build:web</code> and build with <code>-tags embedui</code>.</p></body></html>`)
 	}
+}
+
+func readAll(f fs.File) ([]byte, error) {
+	return io.ReadAll(f)
 }
 
 // getContentType returns the appropriate content type for a file path.
 func getContentType(path string) string {
-	ext := filepath.Ext(path)
+	ext := ""
+	if i := strings.LastIndex(path, "."); i >= 0 {
+		ext = path[i:]
+	}
 	switch ext {
 	case ".html":
 		return "text/html; charset=utf-8"
@@ -270,6 +303,15 @@ func writeError(w http.ResponseWriter, statusCode int, err APIError) {
 	json.NewEncoder(w).Encode(ErrorResponse{Error: err})
 }
 
+// orEmpty returns s if non-nil, otherwise an empty slice, so list endpoints
+// encode as [] instead of null (clients call .map on the result).
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // writeJSON writes a JSON response.
 func writeJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -277,26 +319,28 @@ func writeJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// StatusResponse is the response for the /api/status endpoint.
-type StatusResponse struct {
-	Version       string  `json:"version"`
-	Database      string  `json:"database"` // "missing", "ready"
-	SchemaVersion *int64 `json:"schemaVersion,omitempty"`
+// decodeJSON decodes a JSON request body; an empty body leaves v untouched.
+func decodeJSON(r *http.Request, v interface{}) error {
+	if r.Body == nil || r.ContentLength == 0 {
+		return nil
+	}
+	return json.NewDecoder(r.Body).Decode(v)
 }
 
-// Middleware for request logging and recovery
+// StatusResponse is the response for the /api/status endpoint.
+type StatusResponse struct {
+	Version            string `json:"version"`
+	Database           string `json:"database"` // "missing", "ready"
+	SchemaVersion      *int64 `json:"schemaVersion,omitempty"`
+	AccountsConfigured bool   `json:"accountsConfigured,omitempty"`
+}
+
+// Middleware for request logging
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Log the request
 		slog.Debug("request started", "method", r.Method, "path", r.URL.Path)
-
-		// Wrap the response writer to capture status code
 		wrapped := &responseWriter{ResponseWriter: w}
-
-		// Call the next handler
 		next.ServeHTTP(wrapped, r)
-
-		// Log the response
 		slog.Debug("request completed", "method", r.Method, "path", r.URL.Path, "status", wrapped.status)
 	})
 }
@@ -320,10 +364,18 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-// Middleware for limiting request body size
-func maxBytesMiddleware(maxBytes int64, next http.Handler) http.Handler {
+// maxBytesMiddleware applies a route-specific request body limit:
+// 50 MiB for upload routes, 1 MiB for everything else.
+func maxBytesMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		limit := int64(maxDefaultBytes)
+		switch {
+		case r.URL.Path == "/api/imports/preview",
+			r.URL.Path == "/api/database/upload",
+			r.URL.Path == "/api/database/replace":
+			limit = maxUploadBytes
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -331,7 +383,6 @@ func maxBytesMiddleware(maxBytes int64, next http.Handler) http.Handler {
 // Middleware for security headers
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set security headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'")

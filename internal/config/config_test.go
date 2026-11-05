@@ -7,7 +7,7 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	
+
 	if cfg.DataDir != "./data" {
 		t.Errorf("expected DataDir to be ./data, got %q", cfg.DataDir)
 	}
@@ -21,7 +21,7 @@ func TestLoadConfig(t *testing.T) {
 	oldDataDir := os.Getenv("FA_DATA_DIR")
 	oldAddr := os.Getenv("FA_ADDR")
 	oldLogLevel := os.Getenv("FA_LOG_LEVEL")
-	
+
 	// Clean up
 	defer func() {
 		os.Setenv("FA_DATA_DIR", oldDataDir)

@@ -64,9 +64,11 @@ tasks:
       - internal/db/dbq/*.go
 
   build:web:
-    desc: Build the frontend for production
+    desc: Build the frontend for production into internal/webui/dist
     cmds:
       - cd {{.WEB_DIR}} && npm run build
+      - mkdir -p {{.DIST_DIR}}
+      - cp -r {{.WEB_DIR}}/build/* {{.DIST_DIR}}/
     generates:
       - '{{.DIST_DIR}}/**/*'
 
