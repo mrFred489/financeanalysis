@@ -164,23 +164,23 @@ Requirement IDs are used for tracking. **Must** = v1, **Should** = v1 if feasibl
 | # | Example | Meaning |
 |---|---|---|
 | 0 | *(empty)* | leading column, always empty |
-| 1 | `FOETEX SKEJBY, AARHUS N ` | message |
-| 2 | `9395 0010049288` | account number — the exported account on ordinary rows, one side of the movement on transfer rows |
-| 3 | *(empty, or account number)* | counterparty account — only set on internal transfers |
+| 1 | `EXAMPLE STORE, CITY N ` | message |
+| 2 | `9999 0000000001` | from-account — the exported account on ordinary rows, the sender on incoming transfers |
+| 3 | *(empty, or account number)* | to-account — only set on transfer rows (the receiver); `counterparty_account` is stored as the side that is not the imported account |
 | 4 | `-485,14` | amount, signed, Danish number format |
 | 5 | *(empty in this export)* | running balance (reserved; parsed when present) |
 | 6 | *(empty in this export)* | currency (reserved; empty means `DKK`) |
 | 7 | `05-11-2026` | transaction date (`dd-mm-yyyy`), e.g. card purchase date |
 | 8 | `05-11-2026` | **booking date** (`dd-mm-yyyy`); the file is sorted newest-first on this column |
 | 9 | `05-11-2026` | value date (`dd-mm-yyyy`) |
-| 10 | `0248583685` | bank reference, unique per booked line |
-| 11 | `36281874092` or empty | secondary reference (e.g. MobilePay transaction id) |
+| 10 | `1000000001` | bank reference, unique per booked line |
+| 11 | `11000000001` or empty | secondary reference (e.g. MobilePay transaction id) |
 | 12–13 | *(empty)* | reserved |
-| 14 | `MobilePay Vennelyst Jordbrug` or empty | extra text (repeats the message on MobilePay rows) |
+| 14 | `MobilePay Example Shop` or empty | extra text (repeats the message on MobilePay rows) |
 | 15 | *(empty)* | reserved |
 
-- Example row: `;"FOETEX SKEJBY, AARHUS N ";9395 0010049288;;-485,14;;;05-11-2026;05-11-2026;05-11-2026;0248583685;;;;;`
-- Internal transfers appear in one account's file with both account numbers, e.g. `;Frederik;9395 0010049202;9395 0010049288;4.500,00;;;30-10-2026;30-10-2026;30-10-2026;3930627902;;;;;`
+- Example row: `;"EXAMPLE STORE, CITY N ";9999 0000000001;;-485,14;;;05-11-2026;05-11-2026;05-11-2026;1000000001;;;;;`
+- Internal transfers appear in one account's file with both account numbers, e.g. `;Person B;9999 0000000002;9999 0000000001;4.500,00;;;30-10-2026;30-10-2026;30-10-2026;1000000011;;;;;`
 - Dates are `dd-mm-yyyy`. Amounts use `.` as thousands separator and `,` as decimal separator.
 - Rows are ordered **newest first by booking date (column 8)**. Chronological order within a day is therefore the reverse of file order.
 - The bank never changes a booked line, so the duplicate key (section 6) is stable across overlapping exports.

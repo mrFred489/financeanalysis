@@ -24,7 +24,7 @@ var migrationsFS embed.FS
 var ErrSchemaTooNew = fmt.Errorf("database schema version is newer than the binary supports")
 
 // CurrentSchemaVersion is the current schema version supported by this binary.
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 // maxBackups is the number of backups kept in the backups directory.
 const maxBackups = 20

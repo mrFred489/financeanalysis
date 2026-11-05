@@ -119,7 +119,7 @@ func fixtureCSV(t *testing.T, name string) []byte {
 func createDBViaAPI(t *testing.T, ts *httptest.Server) int64 {
 	t.Helper()
 	status, body, _ := doJSON(t, ts, "POST", "/api/database", map[string]any{
-		"accounts": []map[string]any{{"name": "Main account", "account_number": "1234-5678"}},
+		"accounts": []map[string]any{{"name": "Main account", "account_number": "9999 0000000001"}},
 		"subcategories": []map[string]any{
 			{"category_key": "variable", "name": "Groceries", "sort_order": 0},
 		},
@@ -313,6 +313,13 @@ func TestImportFlowPreviewCommitUndo(t *testing.T) {
 	}
 	if lr.Lines[0]["source"] != "none" {
 		t.Errorf("expected source none, got %v", lr.Lines[0]["source"])
+	}
+	// v2 format: no balance (null), bank_ref stored from column 10
+	if lr.Lines[0]["balanceMinor"] != nil {
+		t.Errorf("expected null balanceMinor, got %v", lr.Lines[0]["balanceMinor"])
+	}
+	if lr.Lines[0]["bankRef"] != "0000000001" {
+		t.Errorf("expected bankRef 0000000001, got %v", lr.Lines[0]["bankRef"])
 	}
 
 	// Filter by message (server-side)

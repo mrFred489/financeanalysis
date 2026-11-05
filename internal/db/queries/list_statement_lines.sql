@@ -4,7 +4,9 @@
 -- builds the ORDER BY dynamically (whitelisted columns) and reuses this row type.
 SELECT
     sl.id, sl.account_id, a.name AS account_name, sl.import_id,
-    sl.booking_date, sl.message, sl.amount_minor, sl.balance_minor, sl.currency,
+    sl.booking_date, sl.transaction_date, sl.value_date,
+    sl.message, sl.amount_minor, sl.balance_minor, sl.currency,
+    sl.bank_ref, sl.counterparty_account,
     sl.file_row, sl.seq, sl.occurrence,
     sl.subcategory_id, sc.name AS subcategory_name, sc.color AS subcategory_color,
     c.id AS category_id, c.name AS category_name,

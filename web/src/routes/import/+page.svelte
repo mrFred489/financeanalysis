@@ -161,6 +161,12 @@
 							</dd>
 						</div>
 						<div>
+							<dt class="text-gray-500">{$i18n.t('import.fileAccounts')}</dt>
+							<dd class="font-medium font-mono text-xs">
+								{preview.fileAccounts.length > 0 ? preview.fileAccounts.join(', ') : '–'}
+							</dd>
+						</div>
+						<div>
 							<dt class="text-gray-500">{$i18n.t('import.newLines')}</dt>
 							<dd class="font-medium text-green-700">{preview.newCount}</dd>
 						</div>

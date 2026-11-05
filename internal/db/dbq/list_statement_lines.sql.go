@@ -13,7 +13,9 @@ import (
 const listStatementLines = `-- name: ListStatementLines :many
 SELECT
     sl.id, sl.account_id, a.name AS account_name, sl.import_id,
-    sl.booking_date, sl.message, sl.amount_minor, sl.balance_minor, sl.currency,
+    sl.booking_date, sl.transaction_date, sl.value_date,
+    sl.message, sl.amount_minor, sl.balance_minor, sl.currency,
+    sl.bank_ref, sl.counterparty_account,
     sl.file_row, sl.seq, sl.occurrence,
     sl.subcategory_id, sc.name AS subcategory_name, sc.color AS subcategory_color,
     c.id AS category_id, c.name AS category_name,
@@ -56,26 +58,30 @@ type ListStatementLinesParams struct {
 }
 
 type ListStatementLinesRow struct {
-	ID               int64          `json:"id"`
-	AccountID        int64          `json:"account_id"`
-	AccountName      string         `json:"account_name"`
-	ImportID         sql.NullInt64  `json:"import_id"`
-	BookingDate      string         `json:"booking_date"`
-	Message          string         `json:"message"`
-	AmountMinor      int64          `json:"amount_minor"`
-	BalanceMinor     int64          `json:"balance_minor"`
-	Currency         string         `json:"currency"`
-	FileRow          int64          `json:"file_row"`
-	Seq              int64          `json:"seq"`
-	Occurrence       int64          `json:"occurrence"`
-	SubcategoryID    sql.NullInt64  `json:"subcategory_id"`
-	SubcategoryName  sql.NullString `json:"subcategory_name"`
-	SubcategoryColor sql.NullString `json:"subcategory_color"`
-	CategoryID       sql.NullInt64  `json:"category_id"`
-	CategoryName     sql.NullString `json:"category_name"`
-	Source           string         `json:"source"`
-	RuleID           sql.NullInt64  `json:"rule_id"`
-	SpreadMonths     int64          `json:"spread_months"`
+	ID                  int64          `json:"id"`
+	AccountID           int64          `json:"account_id"`
+	AccountName         string         `json:"account_name"`
+	ImportID            sql.NullInt64  `json:"import_id"`
+	BookingDate         string         `json:"booking_date"`
+	TransactionDate     sql.NullString `json:"transaction_date"`
+	ValueDate           sql.NullString `json:"value_date"`
+	Message             string         `json:"message"`
+	AmountMinor         int64          `json:"amount_minor"`
+	BalanceMinor        sql.NullInt64  `json:"balance_minor"`
+	Currency            string         `json:"currency"`
+	BankRef             sql.NullString `json:"bank_ref"`
+	CounterpartyAccount sql.NullString `json:"counterparty_account"`
+	FileRow             int64          `json:"file_row"`
+	Seq                 int64          `json:"seq"`
+	Occurrence          int64          `json:"occurrence"`
+	SubcategoryID       sql.NullInt64  `json:"subcategory_id"`
+	SubcategoryName     sql.NullString `json:"subcategory_name"`
+	SubcategoryColor    sql.NullString `json:"subcategory_color"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	CategoryName        sql.NullString `json:"category_name"`
+	Source              string         `json:"source"`
+	RuleID              sql.NullInt64  `json:"rule_id"`
+	SpreadMonths        int64          `json:"spread_months"`
 }
 
 // Filtered, paginated statement lines (STMT-2/STMT-3). NULL params disable the filter.
@@ -111,10 +117,14 @@ func (q *Queries) ListStatementLines(ctx context.Context, arg ListStatementLines
 			&i.AccountName,
 			&i.ImportID,
 			&i.BookingDate,
+			&i.TransactionDate,
+			&i.ValueDate,
 			&i.Message,
 			&i.AmountMinor,
 			&i.BalanceMinor,
 			&i.Currency,
+			&i.BankRef,
+			&i.CounterpartyAccount,
 			&i.FileRow,
 			&i.Seq,
 			&i.Occurrence,

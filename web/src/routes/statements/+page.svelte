@@ -336,7 +336,7 @@
 									: 'text-green-700'}">{formatMinor(line.amountMinor, $locale)}</td
 							>
 							<td class="py-1.5 px-3 text-right font-variant-numeric-tabular"
-								>{formatMinor(line.balanceMinor, $locale)}</td
+								>{line.balanceMinor != null ? formatMinor(line.balanceMinor, $locale) : '–'}</td
 							>
 							<td class="py-1.5 px-3">{line.categoryName ?? '–'}</td>
 							<td class="py-1.5 px-3">

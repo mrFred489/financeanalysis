@@ -29,26 +29,30 @@ type lineFilters struct {
 
 // lineJSON is the API representation of one statement line (STMT-1).
 type lineJSON struct {
-	ID               int64   `json:"id"`
-	AccountID        int64   `json:"accountId"`
-	AccountName      string  `json:"accountName"`
-	ImportID         *int64  `json:"importId"`
-	BookingDate      string  `json:"bookingDate"`
-	Message          string  `json:"message"`
-	AmountMinor      int64   `json:"amountMinor"`
-	BalanceMinor     int64   `json:"balanceMinor"`
-	Currency         string  `json:"currency"`
-	FileRow          int64   `json:"fileRow"`
-	Seq              int64   `json:"seq"`
-	Occurrence       int64   `json:"occurrence"`
-	SubcategoryID    *int64  `json:"subcategoryId"`
-	SubcategoryName  *string `json:"subcategoryName"`
-	SubcategoryColor *string `json:"subcategoryColor"`
-	CategoryID       *int64  `json:"categoryId"`
-	CategoryName     *string `json:"categoryName"`
-	Source           string  `json:"source"`
-	RuleID           *int64  `json:"ruleId"`
-	SpreadMonths     int64   `json:"spreadMonths"`
+	ID                  int64   `json:"id"`
+	AccountID           int64   `json:"accountId"`
+	AccountName         string  `json:"accountName"`
+	ImportID            *int64  `json:"importId"`
+	BookingDate         string  `json:"bookingDate"`
+	TransactionDate     *string `json:"transactionDate"`
+	ValueDate           *string `json:"valueDate"`
+	Message             string  `json:"message"`
+	AmountMinor         int64   `json:"amountMinor"`
+	BalanceMinor        *int64  `json:"balanceMinor"` // null when the bank format has no balance
+	Currency            string  `json:"currency"`
+	BankRef             *string `json:"bankRef"`
+	CounterpartyAccount *string `json:"counterpartyAccount"`
+	FileRow             int64   `json:"fileRow"`
+	Seq                 int64   `json:"seq"`
+	Occurrence          int64   `json:"occurrence"`
+	SubcategoryID       *int64  `json:"subcategoryId"`
+	SubcategoryName     *string `json:"subcategoryName"`
+	SubcategoryColor    *string `json:"subcategoryColor"`
+	CategoryID          *int64  `json:"categoryId"`
+	CategoryName        *string `json:"categoryName"`
+	Source              string  `json:"source"`
+	RuleID              *int64  `json:"ruleId"`
+	SpreadMonths        int64   `json:"spreadMonths"`
 }
 
 // linesResponse is the paginated result of GET /api/lines (STMT-3/STMT-4).
@@ -69,7 +73,9 @@ type totalsJSON struct {
 
 const linesSelect = `SELECT
     sl.id, sl.account_id, a.name AS account_name, sl.import_id,
-    sl.booking_date, sl.message, sl.amount_minor, sl.balance_minor, sl.currency,
+    sl.booking_date, sl.transaction_date, sl.value_date,
+    sl.message, sl.amount_minor, sl.balance_minor, sl.currency,
+    sl.bank_ref, sl.counterparty_account,
     sl.file_row, sl.seq, sl.occurrence,
     sl.subcategory_id, sc.name AS subcategory_name, sc.color AS subcategory_color,
     c.id AS category_id, c.name AS category_name,
@@ -318,7 +324,9 @@ func (s *Server) handleListLines() http.HandlerFunc {
 			var row dbq.ListStatementLinesRow
 			if err := rows.Scan(
 				&row.ID, &row.AccountID, &row.AccountName, &row.ImportID,
-				&row.BookingDate, &row.Message, &row.AmountMinor, &row.BalanceMinor, &row.Currency,
+				&row.BookingDate, &row.TransactionDate, &row.ValueDate,
+				&row.Message, &row.AmountMinor, &row.BalanceMinor, &row.Currency,
+				&row.BankRef, &row.CounterpartyAccount,
 				&row.FileRow, &row.Seq, &row.Occurrence,
 				&row.SubcategoryID, &row.SubcategoryName, &row.SubcategoryColor,
 				&row.CategoryID, &row.CategoryName,
@@ -329,10 +337,17 @@ func (s *Server) handleListLines() http.HandlerFunc {
 			}
 			lines = append(lines, lineJSON{
 				ID: row.ID, AccountID: row.AccountID, AccountName: row.AccountName,
-				ImportID:    nullIntPtr(row.ImportID),
-				BookingDate: row.BookingDate, Message: row.Message,
-				AmountMinor: row.AmountMinor, BalanceMinor: row.BalanceMinor, Currency: row.Currency,
-				FileRow: row.FileRow, Seq: row.Seq, Occurrence: row.Occurrence,
+				ImportID:            nullIntPtr(row.ImportID),
+				BookingDate:         row.BookingDate,
+				TransactionDate:     nullStrPtr(row.TransactionDate),
+				ValueDate:           nullStrPtr(row.ValueDate),
+				Message:             row.Message,
+				AmountMinor:         row.AmountMinor,
+				BalanceMinor:        nullIntPtr(row.BalanceMinor),
+				Currency:            row.Currency,
+				BankRef:             nullStrPtr(row.BankRef),
+				CounterpartyAccount: nullStrPtr(row.CounterpartyAccount),
+				FileRow:             row.FileRow, Seq: row.Seq, Occurrence: row.Occurrence,
 				SubcategoryID:    nullIntPtr(row.SubcategoryID),
 				SubcategoryName:  nullStrPtr(row.SubcategoryName),
 				SubcategoryColor: nullStrPtr(row.SubcategoryColor),
@@ -383,10 +398,17 @@ func (s *Server) handleGetLine() http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, lineJSON{
 			ID: row.ID, AccountID: row.AccountID, AccountName: row.AccountName,
-			ImportID:    nullIntPtr(row.ImportID),
-			BookingDate: row.BookingDate, Message: row.Message,
-			AmountMinor: row.AmountMinor, BalanceMinor: row.BalanceMinor, Currency: row.Currency,
-			FileRow: row.FileRow, Seq: row.Seq, Occurrence: row.Occurrence,
+			ImportID:            nullIntPtr(row.ImportID),
+			BookingDate:         row.BookingDate,
+			TransactionDate:     nullStrPtr(row.TransactionDate),
+			ValueDate:           nullStrPtr(row.ValueDate),
+			Message:             row.Message,
+			AmountMinor:         row.AmountMinor,
+			BalanceMinor:        nullIntPtr(row.BalanceMinor),
+			Currency:            row.Currency,
+			BankRef:             nullStrPtr(row.BankRef),
+			CounterpartyAccount: nullStrPtr(row.CounterpartyAccount),
+			FileRow:             row.FileRow, Seq: row.Seq, Occurrence: row.Occurrence,
 			SubcategoryID:    nullIntPtr(row.SubcategoryID),
 			SubcategoryName:  nullStrPtr(row.SubcategoryName),
 			SubcategoryColor: nullStrPtr(row.SubcategoryColor),

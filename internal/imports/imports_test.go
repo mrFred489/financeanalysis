@@ -42,7 +42,11 @@ func setup(t *testing.T) (context.Context, *dbq.Queries, []byte, string, int64) 
 	}
 
 	q := dbq.New(d)
-	acc, err := q.CreateAccount(ctx, dbq.CreateAccountParams{Name: "Main account", SortOrder: 0})
+	acc, err := q.CreateAccount(ctx, dbq.CreateAccountParams{
+		Name:          "Main account",
+		AccountNumber: sql.NullString{String: "9999 0000000001", Valid: true},
+		SortOrder:     0,
+	})
 	if err != nil {
 		t.Fatalf("CreateAccount: %v", err)
 	}
@@ -67,8 +71,18 @@ func TestPreviewNormal(t *testing.T) {
 	if res.DateFrom != "2024-12-29" || res.DateTo != "2024-12-31" {
 		t.Errorf("expected date range 2024-12-29..2024-12-31, got %s..%s", res.DateFrom, res.DateTo)
 	}
-	if len(res.Warnings) != 0 {
-		t.Errorf("expected no warnings for a clean first import, got %v", res.Warnings)
+	// The v2 export has no balance column: exactly one info warning (IMP-7 skipped)
+	if len(res.Warnings) != 1 || res.Warnings[0].Type != "no_balance" {
+		t.Errorf("expected a single no_balance warning for a clean first import, got %v", res.Warnings)
+	}
+	// Account sanity: the file's account number matches the account (IMP-8)
+	if len(res.FileAccounts) != 1 || res.FileAccounts[0] != "9999 0000000001" {
+		t.Errorf("expected fileAccounts [9999 0000000001], got %v", res.FileAccounts)
+	}
+	for _, w := range res.Warnings {
+		if w.Type == "account_mismatch" {
+			t.Errorf("unexpected account_mismatch warning: %v", w)
+		}
 	}
 	if res.PreviewToken == "" {
 		t.Errorf("expected a preview token")
@@ -90,6 +104,9 @@ func TestPreviewBalanceGaps(t *testing.T) {
 				t.Errorf("expected gap at row 2, got row %d", w.Row)
 			}
 		}
+		if w.Type == "no_balance" {
+			t.Errorf("file carries balances, no_balance warning should not appear: %v", w)
+		}
 	}
 	if gaps != 1 {
 		t.Errorf("expected 1 balance gap warning, got %d (%v)", gaps, res.Warnings)
@@ -99,7 +116,7 @@ func TestPreviewBalanceGaps(t *testing.T) {
 func TestPreviewAccountMismatch(t *testing.T) {
 	ctx, q, secret, backupDir, accountID := setup(t)
 
-	// Import normal.csv first (balances 50.000,00 .. 73.642,03)
+	// Import normal.csv first (account 9999 0000000001)
 	content := fixture(t, "normal.csv")
 	prev, err := Preview(ctx, q, secret, accountID, "normal.csv", content)
 	if err != nil {
@@ -110,8 +127,8 @@ func TestPreviewAccountMismatch(t *testing.T) {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	// A file whose balances do not connect to the existing lines
-	mismatch := []byte("15-01-2025;Some payment;-100,00;12.345,67;DKK\n")
+	// A v2 file whose account number does not match the selected account (IMP-8)
+	mismatch := []byte(";Some payment;9999 0000000099;;-100,00;;;15-01-2025;15-01-2025;15-01-2025;0000000099;;;;;\n")
 	res, err := Preview(ctx, q, secret, accountID, "mismatch.csv", mismatch)
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
@@ -182,6 +199,13 @@ func TestCommitAndUndoRoundTrip(t *testing.T) {
 	if lines[0].BookingDate != "2024-12-31" || lines[0].Seq != 3 {
 		t.Errorf("expected newest first with seq 3, got %s seq %d", lines[0].BookingDate, lines[0].Seq)
 	}
+	// v2 export has no balance -> NULL; bank_ref from column 10 is stored
+	if lines[0].BalanceMinor.Valid {
+		t.Errorf("expected NULL balance, got %d", lines[0].BalanceMinor.Int64)
+	}
+	if !lines[0].BankRef.Valid || lines[0].BankRef.String != "0000000001" {
+		t.Errorf("expected bank_ref 0000000001, got %+v", lines[0].BankRef)
+	}
 
 	// Backup was taken before commit (IMP-10)
 	backups, err := filepath.Glob(filepath.Join(backupDir, "*pre-import*.sqlite"))
@@ -233,6 +257,69 @@ func TestCommitAndUndoRoundTrip(t *testing.T) {
 	// Nothing left to undo
 	if _, err := UndoLatest(ctx, d, backupDir); err != ErrNoImportToUndo {
 		t.Errorf("expected ErrNoImportToUndo, got %v", err)
+	}
+}
+
+// TestPreviewCommitRealSnippet runs the full preview+commit flow on the real
+// headerless export snippet (PRD 7.2), including a transfer row (cols 2/3).
+func TestPreviewCommitRealSnippet(t *testing.T) {
+	ctx, q, secret, backupDir, accountID := setup(t)
+	d, _ := db.GetDB()
+
+	content := fixture(t, "format_v2_snippet.csv")
+	prev, err := Preview(ctx, q, secret, accountID, "format_v2_snippet.csv", content)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if prev.NewCount != 12 || prev.DuplicateCount != 0 {
+		t.Errorf("expected 12 new / 0 dup, got %d / %d (errors %v)", prev.NewCount, prev.DuplicateCount, prev.ParseErrors)
+	}
+	// oldest booking date (column 8) is 30-10-2026 (the 29-10 row is the transaction date)
+	if prev.DateFrom != "2026-10-30" || prev.DateTo != "2026-11-05" {
+		t.Errorf("expected 2026-10-30..2026-11-05, got %s..%s", prev.DateFrom, prev.DateTo)
+	}
+	// both account numbers of the transfer row are reported (sorted)
+	if len(prev.FileAccounts) != 2 || prev.FileAccounts[0] != "9999 0000000001" || prev.FileAccounts[1] != "9999 0000000002" {
+		t.Errorf("expected fileAccounts [9999 0000000001 9999 0000000002], got %v", prev.FileAccounts)
+	}
+
+	res, err := Commit(ctx, d, secret, backupDir, accountID, "format_v2_snippet.csv", content, prev.PreviewToken)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if res.LinesImported != 12 {
+		t.Fatalf("expected 12 imported, got %d", res.LinesImported)
+	}
+
+	lines, err := q.ListStatementLines(ctx, dbq.ListStatementLinesParams{Limit: 100})
+	if err != nil {
+		t.Fatalf("ListStatementLines: %v", err)
+	}
+	if len(lines) != 12 {
+		t.Fatalf("expected 12 lines, got %d", len(lines))
+	}
+	// newest first (2026-11-05), balance NULL, bank_ref stored
+	if lines[0].BookingDate != "2026-11-05" || lines[0].BalanceMinor.Valid {
+		t.Errorf("unexpected newest line: %+v", lines[0])
+	}
+	if !lines[0].BankRef.Valid || lines[0].BankRef.String != "1000000001" {
+		t.Errorf("expected bank_ref 1000000001, got %+v", lines[0].BankRef)
+	}
+	// the transfer row keeps the counterparty account
+	var tr *dbq.ListStatementLinesRow
+	for _, l := range lines {
+		if l.Message == "Person B" {
+			tr = l
+		}
+	}
+	if tr == nil {
+		t.Fatalf("transfer row not found")
+	}
+	if !tr.CounterpartyAccount.Valid || tr.CounterpartyAccount.String != "9999 0000000002" {
+		t.Errorf("expected counterparty 9999 0000000002, got %+v", tr.CounterpartyAccount)
+	}
+	if tr.AmountMinor != 450000 {
+		t.Errorf("expected 450000, got %d", tr.AmountMinor)
 	}
 }
 

@@ -29,7 +29,7 @@ func TestParseNormal(t *testing.T) {
 		t.Errorf("expected no errors/warnings, got %v / %v", res.Errors, res.Warnings)
 	}
 
-	// File is newest-first; seq is the reverse (chronological, IMP-8a)
+	// File is newest-first on the booking date (column 8); seq is the reverse (chronological, IMP-8a)
 	first := res.Lines[0]
 	if first.Date != "2024-12-31" {
 		t.Errorf("expected date 2024-12-31, got %q", first.Date)
@@ -40,8 +40,17 @@ func TestParseNormal(t *testing.T) {
 	if first.AmountMinor != 2500000 {
 		t.Errorf("expected amount 2500000, got %d", first.AmountMinor)
 	}
-	if first.BalanceMinor != 7364203 {
-		t.Errorf("expected balance 7364203, got %d", first.BalanceMinor)
+	if first.BalanceMinor != nil {
+		t.Errorf("expected nil balance (no balance column in v2 export), got %v", *first.BalanceMinor)
+	}
+	if first.AccountFrom != "9999 0000000001" {
+		t.Errorf("expected account 9999 0000000001, got %q", first.AccountFrom)
+	}
+	if first.BankRef != "0000000001" {
+		t.Errorf("expected bank ref 0000000001, got %q", first.BankRef)
+	}
+	if first.Currency != "DKK" {
+		t.Errorf("expected default currency DKK, got %q", first.Currency)
 	}
 	if first.Seq != 3 {
 		t.Errorf("expected seq 3 for newest row, got %d", first.Seq)
@@ -77,12 +86,15 @@ func TestParseBOMSemicolonAndCRLF(t *testing.T) {
 	if res.Lines[1].Message != `He said "hi"` {
 		t.Errorf("expected quoted message preserved, got %q", res.Lines[1].Message)
 	}
-	// Unquoted ';' in the message: middle fields are joined back with ';'
+	// Unquoted ';' in the message: surplus fields are joined back with ';'
 	if res.Lines[2].Message != "Køb; a; b" {
 		t.Errorf("expected message %q, got %q", "Køb; a; b", res.Lines[2].Message)
 	}
 	if res.Lines[2].AmountMinor != -1000 {
 		t.Errorf("expected -1000, got %d", res.Lines[2].AmountMinor)
+	}
+	if res.Lines[2].BankRef != "0000000012" {
+		t.Errorf("expected bank ref 0000000012 despite the extra fields, got %q", res.Lines[2].BankRef)
 	}
 }
 
@@ -132,12 +144,61 @@ func TestParseDuplicateOccurrence(t *testing.T) {
 	if len(res.Lines) != 4 {
 		t.Fatalf("expected 4 lines, got %d", len(res.Lines))
 	}
-	// Rows 1 and 3 are identical tuples -> occurrence 1 and 2; row 2 differs by balance -> occurrence 1
-	want := []int{1, 1, 2, 1}
+	// The occurrence key has no balance (PRD section 6): rows 1-3 are identical
+	// tuples -> occurrence 1, 2, 3; row 4 differs -> occurrence 1
+	want := []int{1, 2, 3, 1}
 	for i, w := range want {
 		if res.Lines[i].Occurrence != w {
 			t.Errorf("line %d: expected occurrence %d, got %d", i, w, res.Lines[i].Occurrence)
 		}
+	}
+}
+
+// TestParseFormatV2Snippet parses the real headerless export snippet (PRD 7.2).
+func TestParseFormatV2Snippet(t *testing.T) {
+	res, err := Parse(strings.NewReader(fixture(t, "format_v2_snippet.csv")))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(res.Lines) != 12 || len(res.Errors) != 0 || len(res.Warnings) != 0 {
+		t.Fatalf("expected 12 clean lines, got %d lines, errors %v, warnings %v", len(res.Lines), res.Errors, res.Warnings)
+	}
+
+	first := res.Lines[0]
+	if first.Message != "EXAMPLE STORE, CITY N " {
+		t.Errorf("expected quoted message with trailing space, got %q", first.Message)
+	}
+	if first.Date != "2026-11-05" || first.AmountMinor != -48514 || first.BankRef != "1000000001" {
+		t.Errorf("unexpected first line: %+v", first)
+	}
+	if first.BalanceMinor != nil {
+		t.Errorf("expected nil balance, got %d", *first.BalanceMinor)
+	}
+
+	// MobilePay row: secondary reference (col 11) and extra text (col 14)
+	mp := res.Lines[3]
+	if mp.Message != "MobilePay Example Shop" || mp.ExtraRef != "11000000001" || mp.ExtraText != "MobilePay Example Shop" {
+		t.Errorf("unexpected MobilePay line: %+v", mp)
+	}
+
+	// Card purchase booked the day after the transaction date (cols 7 vs 8)
+	cardPurchase := res.Lines[8]
+	if cardPurchase.TransactionDate == nil || *cardPurchase.TransactionDate != "2026-11-01" {
+		t.Errorf("expected transaction date 2026-11-01, got %v", cardPurchase.TransactionDate)
+	}
+	if cardPurchase.Date != "2026-11-02" {
+		t.Errorf("expected booking date 2026-11-02, got %q", cardPurchase.Date)
+	}
+
+	// Internal transfer: both account numbers (cols 2/3), positive amount
+	tr := res.Lines[10]
+	if tr.Message != "Person B" || tr.AccountFrom != "9999 0000000002" || tr.AccountTo != "9999 0000000001" || tr.AmountMinor != 450000 {
+		t.Errorf("unexpected transfer line: %+v", tr)
+	}
+
+	// File is newest-first on the booking date; seq is the reverse
+	if res.Lines[0].Seq != 12 || res.Lines[11].Seq != 1 {
+		t.Errorf("expected seq 12/1, got %d/%d", res.Lines[0].Seq, res.Lines[11].Seq)
 	}
 }
 
@@ -192,5 +253,11 @@ func TestParseDate(t *testing.T) {
 	}
 	if _, err := parseDate("31-02-2025"); err == nil {
 		t.Errorf("parseDate(31-02-2025) expected error (invalid calendar date)")
+	}
+	if d, err := parseOptionalDate(""); err != nil || d != nil {
+		t.Errorf("parseOptionalDate(\"\") = %v, %v; want nil, nil", d, err)
+	}
+	if d, err := parseOptionalDate("05-11-2026"); err != nil || d == nil || *d != "2026-11-05" {
+		t.Errorf("parseOptionalDate(05-11-2026) = %v, %v", d, err)
 	}
 }

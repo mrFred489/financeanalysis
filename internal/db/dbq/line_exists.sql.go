@@ -14,27 +14,25 @@ SELECT COUNT(*) FROM statement_line
 WHERE account_id = ?
   AND booking_date = ?
   AND amount_minor = ?
-  AND balance_minor = ?
   AND message = ?
   AND occurrence = ?
 `
 
 type LineExistsParams struct {
-	AccountID    int64  `json:"account_id"`
-	BookingDate  string `json:"booking_date"`
-	AmountMinor  int64  `json:"amount_minor"`
-	BalanceMinor int64  `json:"balance_minor"`
-	Message      string `json:"message"`
-	Occurrence   int64  `json:"occurrence"`
+	AccountID   int64  `json:"account_id"`
+	BookingDate string `json:"booking_date"`
+	AmountMinor int64  `json:"amount_minor"`
+	Message     string `json:"message"`
+	Occurrence  int64  `json:"occurrence"`
 }
 
-// Duplicate check against the unique key (IMP-6, PRD section 6).
+// Duplicate check against the unique key (IMP-6, PRD section 6). The current
+// bank format has no running balance, so balance is not part of the key.
 func (q *Queries) LineExists(ctx context.Context, arg LineExistsParams) (int64, error) {
 	row := q.queryRow(ctx, q.lineExistsStmt, lineExists,
 		arg.AccountID,
 		arg.BookingDate,
 		arg.AmountMinor,
-		arg.BalanceMinor,
 		arg.Message,
 		arg.Occurrence,
 	)

@@ -177,6 +177,93 @@ func TestMigrateFromV1(t *testing.T) {
 	}
 }
 
+func TestMigrateFromV2PreservesLines(t *testing.T) {
+	// Simulate a database at schema version 2 (M1) with a statement line that
+	// has a balance, then migrate to v3 (CSV format v2) and verify the row is
+	// preserved: balance kept, new v2 columns NULL, dedup index without balance.
+	tmpDir, err := os.MkdirTemp("", "financeanalysis-migrate-v2-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.sqlite")
+	backupDir := filepath.Join(tmpDir, "backups")
+
+	if err := InitDB(context.Background(), dbPath); err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	db, err := GetDB()
+	if err != nil {
+		t.Fatalf("failed to get DB: %v", err)
+	}
+	defer db.Close()
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("failed to load migrations: %v", err)
+	}
+	for _, m := range migrations {
+		if m.version > 2 {
+			break
+		}
+		if err := applyMigration(context.Background(), db, m); err != nil {
+			t.Fatalf("failed to apply migration %d: %v", m.version, err)
+		}
+	}
+
+	if _, err := db.Exec(`INSERT INTO account (name, account_number) VALUES ('Main', '9999 0000000001')`); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO statement_line (account_id, booking_date, message, amount_minor, balance_minor, currency, file_row, seq, occurrence)
+		VALUES (1, '2025-01-01', 'Old format row', -10000, 99000, 'DKK', 1, 1, 1)`); err != nil {
+		t.Fatalf("insert line: %v", err)
+	}
+
+	if err := Migrate(context.Background(), db, backupDir); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	version, err := SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("schema version: %v", err)
+	}
+	if version != CurrentSchemaVersion {
+		t.Errorf("expected schema version %d, got %d", CurrentSchemaVersion, version)
+	}
+
+	var balance sql.NullInt64
+	var bankRef, counterparty sql.NullString
+	var txDate sql.NullString
+	err = db.QueryRow(`SELECT balance_minor, bank_ref, counterparty_account, transaction_date FROM statement_line WHERE id = 1`).
+		Scan(&balance, &bankRef, &counterparty, &txDate)
+	if err != nil {
+		t.Fatalf("select line: %v", err)
+	}
+	if !balance.Valid || balance.Int64 != 99000 {
+		t.Errorf("expected preserved balance 99000, got %+v", balance)
+	}
+	if bankRef.Valid || counterparty.Valid || txDate.Valid {
+		t.Errorf("expected NULL v2 columns on a migrated row, got %v %v %v", bankRef, counterparty, txDate)
+	}
+
+	// The dedup index must no longer include balance: two rows identical except
+	// balance must now conflict.
+	if _, err := db.Exec(`INSERT INTO statement_line (account_id, booking_date, message, amount_minor, balance_minor, currency, file_row, seq, occurrence)
+		VALUES (1, '2025-01-01', 'Old format row', -10000, 12345, 'DKK', 2, 2, 1)`); err == nil {
+		t.Errorf("expected unique index violation: dedup key should not include balance anymore")
+	}
+	// A genuinely different row still inserts fine (NULL balance allowed).
+	if _, err := db.Exec(`INSERT INTO statement_line (account_id, booking_date, message, amount_minor, currency, file_row, seq, occurrence)
+		VALUES (1, '2025-01-02', 'New format row', -500, 'DKK', 3, 3, 1)`); err != nil {
+		t.Errorf("expected insert with NULL balance to succeed, got %v", err)
+	}
+
+	if err := integrityCheck(context.Background(), db); err != nil {
+		t.Fatalf("integrity check failed: %v", err)
+	}
+}
+
 func TestMigrateSchemaTooNew(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "financeanalysis-too-new-test")
 	if err != nil {

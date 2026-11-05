@@ -81,8 +81,10 @@ Update `csvparse_test.go`, `imports_test.go` (replace the balance-gap and balanc
 
 ## Definition of done
 
-- [ ] Migration `00003` applies cleanly from empty and from a 00002 fixture DB; integrity + FK checks pass.
-- [ ] `csvparse` parses the real snippet exactly (12 rows, correct fields per column); all edge-case fixtures behave per the unit tests.
-- [ ] Preview on a v2 file shows date range, new/duplicate counts, the account-number sanity result and the no-balance info note; commit stores the new columns; undo still works.
-- [ ] Statements view lists the imported lines (balance "—"), filtering/sorting/pagination unchanged.
-- [ ] `task test`, `task lint`, `task check:generated` pass.
+- [x] Migration `00003` applies cleanly from empty, from v1 and from a v2-schema DB with existing lines (`TestMigrateFromV2PreservesLines`); integrity + FK checks pass.
+- [x] `csvparse` parses the real snippet exactly (12 rows, correct fields per column; `TestParseFormatV2Snippet`); all edge-case fixtures behave per the unit tests.
+- [x] Preview on a v2 file shows date range, new/duplicate counts, file account numbers, the account-number sanity result and the no-balance info note; commit stores the new columns (incl. `counterparty_account` on transfer rows); undo still works (`TestPreviewCommitRealSnippet`).
+- [x] Statements view lists the imported lines (balance "—" when NULL), filtering/sorting/pagination unchanged.
+- [x] `go test ./...`, `go vet`, `staticcheck`, `gofmt`, `sqlc diff`, web `check`/`lint`/`test` all pass.
+
+Implemented 2026-11-05.

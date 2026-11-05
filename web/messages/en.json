@@ -111,6 +111,7 @@
 		"working": "Working…",
 		"previewTitle": "Preview: {file}",
 		"dateRange": "Date range",
+		"fileAccounts": "Account in file",
 		"newLines": "New lines",
 		"duplicates": "Duplicates",
 		"parseErrors": "Parse errors",

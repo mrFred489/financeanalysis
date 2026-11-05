@@ -130,6 +130,7 @@ export interface PreviewResult {
 	fileSha256: string;
 	previewToken: string;
 	accountId: number;
+	fileAccounts: string[];
 	dateFrom?: string;
 	dateTo?: string;
 	newCount: number;
@@ -153,10 +154,14 @@ export interface StatementLine {
 	accountName: string;
 	importId: number | null;
 	bookingDate: string;
+	transactionDate: string | null;
+	valueDate: string | null;
 	message: string;
 	amountMinor: number;
-	balanceMinor: number;
+	balanceMinor: number | null; // null when the bank format has no balance column
 	currency: string;
+	bankRef: string | null;
+	counterpartyAccount: string | null;
 	fileRow: number;
 	seq: number;
 	occurrence: number;

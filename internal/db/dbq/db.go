@@ -57,14 +57,8 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAccountStmt, err = db.PrepareContext(ctx, getAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAccount: %w", err)
 	}
-	if q.getEarliestLineAfterStmt, err = db.PrepareContext(ctx, getEarliestLineAfter); err != nil {
-		return nil, fmt.Errorf("error preparing query GetEarliestLineAfter: %w", err)
-	}
 	if q.getImportBatchStmt, err = db.PrepareContext(ctx, getImportBatch); err != nil {
 		return nil, fmt.Errorf("error preparing query GetImportBatch: %w", err)
-	}
-	if q.getLatestLineBeforeStmt, err = db.PrepareContext(ctx, getLatestLineBefore); err != nil {
-		return nil, fmt.Errorf("error preparing query GetLatestLineBefore: %w", err)
 	}
 	if q.getLatestNonUndoneImportStmt, err = db.PrepareContext(ctx, getLatestNonUndoneImport); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLatestNonUndoneImport: %w", err)
@@ -186,19 +180,9 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getAccountStmt: %w", cerr)
 		}
 	}
-	if q.getEarliestLineAfterStmt != nil {
-		if cerr := q.getEarliestLineAfterStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getEarliestLineAfterStmt: %w", cerr)
-		}
-	}
 	if q.getImportBatchStmt != nil {
 		if cerr := q.getImportBatchStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getImportBatchStmt: %w", cerr)
-		}
-	}
-	if q.getLatestLineBeforeStmt != nil {
-		if cerr := q.getLatestLineBeforeStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getLatestLineBeforeStmt: %w", cerr)
 		}
 	}
 	if q.getLatestNonUndoneImportStmt != nil {
@@ -351,9 +335,7 @@ type Queries struct {
 	deleteLinesByImportStmt         *sql.Stmt
 	deleteSubcategoryStmt           *sql.Stmt
 	getAccountStmt                  *sql.Stmt
-	getEarliestLineAfterStmt        *sql.Stmt
 	getImportBatchStmt              *sql.Stmt
-	getLatestLineBeforeStmt         *sql.Stmt
 	getLatestNonUndoneImportStmt    *sql.Stmt
 	getSettingStmt                  *sql.Stmt
 	getStatementLineStmt            *sql.Stmt
@@ -391,9 +373,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteLinesByImportStmt:         q.deleteLinesByImportStmt,
 		deleteSubcategoryStmt:           q.deleteSubcategoryStmt,
 		getAccountStmt:                  q.getAccountStmt,
-		getEarliestLineAfterStmt:        q.getEarliestLineAfterStmt,
 		getImportBatchStmt:              q.getImportBatchStmt,
-		getLatestLineBeforeStmt:         q.getLatestLineBeforeStmt,
 		getLatestNonUndoneImportStmt:    q.getLatestNonUndoneImportStmt,
 		getSettingStmt:                  q.getSettingStmt,
 		getStatementLineStmt:            q.getStatementLineStmt,

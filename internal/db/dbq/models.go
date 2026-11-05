@@ -41,21 +41,25 @@ type Setting struct {
 }
 
 type StatementLine struct {
-	ID            int64         `json:"id"`
-	AccountID     int64         `json:"account_id"`
-	ImportID      sql.NullInt64 `json:"import_id"`
-	BookingDate   string        `json:"booking_date"`
-	Message       string        `json:"message"`
-	AmountMinor   int64         `json:"amount_minor"`
-	BalanceMinor  int64         `json:"balance_minor"`
-	Currency      string        `json:"currency"`
-	FileRow       int64         `json:"file_row"`
-	Seq           int64         `json:"seq"`
-	Occurrence    int64         `json:"occurrence"`
-	SubcategoryID sql.NullInt64 `json:"subcategory_id"`
-	Source        string        `json:"source"`
-	RuleID        sql.NullInt64 `json:"rule_id"`
-	SpreadMonths  int64         `json:"spread_months"`
+	ID                  int64          `json:"id"`
+	AccountID           int64          `json:"account_id"`
+	ImportID            sql.NullInt64  `json:"import_id"`
+	BookingDate         string         `json:"booking_date"`
+	TransactionDate     sql.NullString `json:"transaction_date"`
+	ValueDate           sql.NullString `json:"value_date"`
+	Message             string         `json:"message"`
+	AmountMinor         int64          `json:"amount_minor"`
+	BalanceMinor        sql.NullInt64  `json:"balance_minor"`
+	Currency            string         `json:"currency"`
+	BankRef             sql.NullString `json:"bank_ref"`
+	CounterpartyAccount sql.NullString `json:"counterparty_account"`
+	FileRow             int64          `json:"file_row"`
+	Seq                 int64          `json:"seq"`
+	Occurrence          int64          `json:"occurrence"`
+	SubcategoryID       sql.NullInt64  `json:"subcategory_id"`
+	Source              string         `json:"source"`
+	RuleID              sql.NullInt64  `json:"rule_id"`
+	SpreadMonths        int64          `json:"spread_months"`
 }
 
 type Subcategory struct {

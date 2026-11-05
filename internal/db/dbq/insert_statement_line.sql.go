@@ -12,36 +12,48 @@ import (
 
 const insertStatementLine = `-- name: InsertStatementLine :one
 INSERT INTO statement_line (
-    account_id, import_id, booking_date, message, amount_minor, balance_minor,
-    currency, file_row, seq, occurrence, source
+    account_id, import_id, booking_date, transaction_date, value_date,
+    message, amount_minor, balance_minor, currency, bank_ref, counterparty_account,
+    file_row, seq, occurrence, source
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none')
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none')
 RETURNING id
 `
 
 type InsertStatementLineParams struct {
-	AccountID    int64         `json:"account_id"`
-	ImportID     sql.NullInt64 `json:"import_id"`
-	BookingDate  string        `json:"booking_date"`
-	Message      string        `json:"message"`
-	AmountMinor  int64         `json:"amount_minor"`
-	BalanceMinor int64         `json:"balance_minor"`
-	Currency     string        `json:"currency"`
-	FileRow      int64         `json:"file_row"`
-	Seq          int64         `json:"seq"`
-	Occurrence   int64         `json:"occurrence"`
+	AccountID           int64          `json:"account_id"`
+	ImportID            sql.NullInt64  `json:"import_id"`
+	BookingDate         string         `json:"booking_date"`
+	TransactionDate     sql.NullString `json:"transaction_date"`
+	ValueDate           sql.NullString `json:"value_date"`
+	Message             string         `json:"message"`
+	AmountMinor         int64          `json:"amount_minor"`
+	BalanceMinor        sql.NullInt64  `json:"balance_minor"`
+	Currency            string         `json:"currency"`
+	BankRef             sql.NullString `json:"bank_ref"`
+	CounterpartyAccount sql.NullString `json:"counterparty_account"`
+	FileRow             int64          `json:"file_row"`
+	Seq                 int64          `json:"seq"`
+	Occurrence          int64          `json:"occurrence"`
 }
 
 // M1: new lines always get source = 'none' (D5); rule/transfer evaluation is M3/M4.
+// CSV format v2 (PRD section 7.2): transaction_date/value_date come from columns
+// 7/9, balance_minor from column 5 (NULL when the export has no balance),
+// bank_ref from column 10, counterparty_account from column 3 (transfers).
 func (q *Queries) InsertStatementLine(ctx context.Context, arg InsertStatementLineParams) (int64, error) {
 	row := q.queryRow(ctx, q.insertStatementLineStmt, insertStatementLine,
 		arg.AccountID,
 		arg.ImportID,
 		arg.BookingDate,
+		arg.TransactionDate,
+		arg.ValueDate,
 		arg.Message,
 		arg.AmountMinor,
 		arg.BalanceMinor,
 		arg.Currency,
+		arg.BankRef,
+		arg.CounterpartyAccount,
 		arg.FileRow,
 		arg.Seq,
 		arg.Occurrence,
