@@ -108,7 +108,7 @@ export interface ImportBatch {
 	imported_at: string;
 	line_count: number;
 	duplicate_count: number;
-	undone_at: nullString | null;
+	undone_at: string | null;
 	date_from: string | null;
 	date_to: string | null;
 	actual_line_count: number;
@@ -397,7 +397,7 @@ function mapBatch(raw: Record<string, unknown>): ImportBatch {
 		imported_at: raw.imported_at as string,
 		line_count: raw.line_count as number,
 		duplicate_count: raw.duplicate_count as number,
-		undone_at: raw.undone_at as nullString | null,
+		undone_at: ns(raw.undone_at as nullString | null),
 		date_from: raw.date_from as string | null,
 		date_to: raw.date_to as string | null,
 		actual_line_count: raw.actual_line_count as number

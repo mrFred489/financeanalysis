@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { APIError, apiFetch } from './api';
+import { APIError, apiFetch, listImports } from './api';
 
 const originalFetch = globalThis.fetch;
 
@@ -39,5 +39,61 @@ describe('apiFetch error parsing', () => {
 			);
 		const res = await apiFetch<{ version: string; database: string }>('/status');
 		expect(res.database).toBe('ready');
+	});
+});
+
+describe('listImports undone_at mapping', () => {
+	// The Go API serializes sql.NullString as {"String":"","Valid":false} for NULL;
+	// mapBatch must convert that to a real null so the UI truthiness checks work.
+	it('maps an active batch to undone_at: null', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify([
+					{
+						id: 1,
+						account_id: 1,
+						account_name: 'Main',
+						file_name: 'a.csv',
+						file_sha256: 'x',
+						imported_at: '2026-11-05T10:00:00Z',
+						line_count: 3,
+						duplicate_count: 0,
+						undone_at: { String: '', Valid: false },
+						date_from: '2026-11-01',
+						date_to: '2026-11-05',
+						actual_line_count: 3
+					}
+				]),
+				{ status: 200 }
+			)
+		);
+		const [b] = await listImports();
+		expect(b.undone_at).toBeNull();
+	});
+
+	it('maps an undone batch to the timestamp string', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify([
+					{
+						id: 1,
+						account_id: 1,
+						account_name: 'Main',
+						file_name: 'a.csv',
+						file_sha256: 'x',
+						imported_at: '2026-11-05T10:00:00Z',
+						line_count: 3,
+						duplicate_count: 0,
+						undone_at: { String: '2026-11-05T11:00:00Z', Valid: true },
+						date_from: '2026-11-01',
+						date_to: '2026-11-05',
+						actual_line_count: 3
+					}
+				]),
+				{ status: 200 }
+			)
+		);
+		const [b] = await listImports();
+		expect(b.undone_at).toBe('2026-11-05T11:00:00Z');
 	});
 });

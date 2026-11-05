@@ -379,6 +379,11 @@ func TestImportFlowPreviewCommitUndo(t *testing.T) {
 	if batches[0]["account_name"] != "Main account" || batches[0]["date_from"] != "2024-12-29" {
 		t.Errorf("unexpected batch: %v", batches[0])
 	}
+	// An active batch must serialize undone_at as the invalid null-shape
+	// ({"String":"","Valid":false}), not as a set timestamp.
+	if ua, ok := batches[0]["undone_at"].(map[string]any); !ok || ua["Valid"] != false {
+		t.Errorf("expected undone_at Valid=false for an active batch, got %v", batches[0]["undone_at"])
+	}
 
 	// Undo a non-latest id is fine here (only one), then lines are gone
 	status, _, _ = doJSON(t, ts, "POST", fmt.Sprintf("/api/imports/%d/undo", importID), nil)
@@ -391,11 +396,12 @@ func TestImportFlowPreviewCommitUndo(t *testing.T) {
 		t.Errorf("expected 0 lines after undo, got %d", lr.Total)
 	}
 
-	// Batch marked undone
+	// Batch marked undone: undone_at must be Valid=true with a timestamp
 	_, _, raw = doJSON(t, ts, "GET", "/api/imports", nil)
 	json.Unmarshal(raw, &batches)
-	if batches[0]["undone_at"] == nil {
-		t.Errorf("expected undone_at set, got %v", batches[0])
+	ua, ok := batches[0]["undone_at"].(map[string]any)
+	if !ok || ua["Valid"] != true || ua["String"] == "" {
+		t.Errorf("expected undone_at Valid=true with a timestamp after undo, got %v", batches[0]["undone_at"])
 	}
 
 	// Undo again -> 409 nothing to undo
