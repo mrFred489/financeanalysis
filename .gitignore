@@ -13,6 +13,9 @@ web/build/
 # Data directory (bind-mounted in Docker)
 data/
 
+# Per-slot dev data directories (see docs/plans/dev-slots.md)
+.dev/
+
 # Database files outside testdata
 a*.sqlite
 *.sqlite

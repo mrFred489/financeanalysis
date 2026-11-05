@@ -8,6 +8,57 @@ vars:
   BINARY_NAME: financeanalysis
   BINARY_PATH: '{{.BIN_DIR}}/{{.BINARY_NAME}}'
   COMPOSE_FILE: compose.yaml
+  # Dev slot configuration. SLOT names an isolated dev environment (default
+  # "main"); DATA_DIR points at a completely different data directory and
+  # takes precedence over the slot-derived directory. API_PORT/WEB_PORT
+  # override the ports derived from the slot/data dir.
+  # SLOT_DATA_DIR and DATA_DIR are plain self-referential scalars so that env
+  # vars / CLI vars with those names are picked up instead of being shadowed.
+  SLOT: '{{.SLOT | default "main"}}'
+  DATA_DIR: '{{.DATA_DIR | default ""}}'
+  SLOT_DATA_DIR: '{{.SLOT_DATA_DIR | default ""}}'
+  # CUSTOM_DATA_DIR is the user-supplied data dir (SLOT_DATA_DIR wins over
+  # DATA_DIR), tilde-expanded, or empty when running on a slot-derived dir.
+  CUSTOM_DATA_DIR:
+    sh: |
+      d=""
+      if [ -n "{{.SLOT_DATA_DIR}}" ]; then d="{{.SLOT_DATA_DIR}}"
+      elif [ -n "{{.DATA_DIR}}" ]; then d="{{.DATA_DIR}}"
+      fi
+      if [ -n "$d" ]; then
+        case "$d" in "~"|"~"/*) d="$HOME${d#?}" ;; esac
+        printf '%s\n' "$d"
+      fi
+  # EFFECTIVE_DATA_DIR is the final data dir: custom dir if given, ./data for
+  # the main slot, .dev/<slot> otherwise.
+  EFFECTIVE_DATA_DIR:
+    sh: |
+      if [ -n "{{.CUSTOM_DATA_DIR}}" ]; then
+        printf '%s\n' "{{.CUSTOM_DATA_DIR}}"
+      elif [ "{{.SLOT}}" = "main" ]; then
+        echo "./data"
+      else
+        echo ".dev/{{.SLOT}}"
+      fi
+  # Derived ports (do not rename: API_PORT/WEB_PORT below must be able to
+  # override these via env or CLI). Ports are hashed from the custom data dir
+  # when one is given, otherwise from the slot name.
+  DERIVED_API_PORT:
+    sh: |
+      if [ -n "{{.CUSTOM_DATA_DIR}}" ]; then
+        go run ./cmd/devports -path "{{.CUSTOM_DATA_DIR}}" api
+      else
+        go run ./cmd/devports "{{.SLOT}}" api
+      fi
+  DERIVED_WEB_PORT:
+    sh: |
+      if [ -n "{{.CUSTOM_DATA_DIR}}" ]; then
+        go run ./cmd/devports -path "{{.CUSTOM_DATA_DIR}}" web
+      else
+        go run ./cmd/devports "{{.SLOT}}" web
+      fi
+  API_PORT: '{{.API_PORT | default .DERIVED_API_PORT}}'
+  WEB_PORT: '{{.WEB_PORT | default .DERIVED_WEB_PORT}}'
 
 env:
   GOOS: '{{ default "" .GOOS | default (OS) }}'
@@ -25,32 +76,59 @@ tasks:
       - test -d {{.WEB_DIR}}/node_modules
 
   dev:
-    desc: Run the development server
+    desc: Run the development server (API in background, web in foreground)
     deps: [generate]
     cmds:
-      - task: dev:api
-      - task: dev:web
-    vars:
-      DEV_API:
-        sh: go run ./cmd/financeanalysis serve
-      DEV_WEB:
-        sh: cd {{.WEB_DIR}} && npm run dev
+      # Run both at once — dev:api blocks, so it goes to the background.
+      # env applies to both commands; run dev:api / dev:web separately in
+      # individual terminals if you prefer.
+      - go run ./cmd/financeanalysis serve &
+      - cd {{.WEB_DIR}} && npm run dev -- --port {{.WEB_PORT}} --strictPort
+    env:
+      FA_DATA_DIR: '{{.EFFECTIVE_DATA_DIR}}'
+      FA_ADDR: '127.0.0.1:{{.API_PORT}}'
+      FA_LOG_LEVEL: debug
+      VITE_API_URL: 'http://127.0.0.1:{{.API_PORT}}'
 
   dev:api:
-    desc: Run the Go server
+    desc: Run the Go server (slot-aware; see dev:ports)
     cmds:
       - go run ./cmd/financeanalysis serve
     env:
-      FA_DATA_DIR: ./data
-      FA_ADDR: 127.0.0.1:8080
+      FA_DATA_DIR: '{{.EFFECTIVE_DATA_DIR}}'
+      FA_ADDR: '127.0.0.1:{{.API_PORT}}'
       FA_LOG_LEVEL: debug
 
   dev:web:
-    desc: Run the Vite development server
+    desc: Run the Vite development server (slot-aware; see dev:ports)
     cmds:
-      - cd {{.WEB_DIR}} && npm run dev
+      - cd {{.WEB_DIR}} && npm run dev -- --port {{.WEB_PORT}} --strictPort
     env:
-      VITE_API_URL: http://127.0.0.1:8080
+      VITE_API_URL: 'http://127.0.0.1:{{.API_PORT}}'
+
+  dev:ports:
+    desc: Print the data dir and URLs for a dev slot without starting servers
+    silent: true
+    cmds:
+      - echo "slot={{.SLOT}} data_dir={{.EFFECTIVE_DATA_DIR}} api=http://127.0.0.1:{{.API_PORT}} web=http://127.0.0.1:{{.WEB_PORT}}"
+
+  dev:reset:
+    desc: Delete a dev slot's data directory (main slot and external dirs need CONFIRM=1)
+    cmds:
+      - |
+        if [ "{{.SLOT}}" = "main" ] && [ -z "{{.CUSTOM_DATA_DIR}}" ]; then
+          echo "refusing to reset the main slot (set CONFIRM=1 to override)" >&2
+          if [ "{{.CONFIRM | default ""}}" != "1" ]; then exit 1; fi
+        fi
+        case "{{.EFFECTIVE_DATA_DIR}}" in
+          .dev/*) ;;
+          *)
+            echo "refusing to delete {{.EFFECTIVE_DATA_DIR}} outside .dev/ (set CONFIRM=1 to override)" >&2
+            if [ "{{.CONFIRM | default ""}}" != "1" ]; then exit 1; fi
+            ;;
+        esac
+        rm -rf "{{.EFFECTIVE_DATA_DIR}}"
+        echo "removed {{.EFFECTIVE_DATA_DIR}}"
 
   generate:
     desc: Generate code (sqlc)
@@ -158,6 +236,8 @@ tasks:
     - dev
     - dev:api
     - dev:web
+    - dev:ports
+    - dev:reset
     - generate
     - build:web
     - build
