@@ -24,7 +24,7 @@ WHERE (sqlc.narg(from_date) IS NULL OR sl.booking_date >= sqlc.narg(from_date))
   AND (sqlc.narg(message) IS NULL OR sl.message LIKE '%' || sqlc.narg(message) || '%')
   AND (sqlc.narg(categories) IS NULL OR sc.category_id IN (SELECT CAST(value AS INTEGER) FROM json_each(sqlc.narg(categories))))
   AND (sqlc.narg(subcategories) IS NULL OR sl.subcategory_id IN (SELECT CAST(value AS INTEGER) FROM json_each(sqlc.narg(subcategories))))
-  AND (sqlc.narg(source) IS NULL OR sl.source = sqlc.narg(source))
+  AND (sqlc.narg(source) IS NULL OR sl.source IN (SELECT value FROM json_each(sqlc.narg(source))))
   AND (sqlc.narg(import_id) IS NULL OR sl.import_id = sqlc.narg(import_id))
   AND (sqlc.narg(spread_gt) IS NULL OR sl.spread_months > sqlc.narg(spread_gt))
 ORDER BY sl.booking_date DESC, sl.seq DESC, sl.id

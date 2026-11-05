@@ -107,6 +107,15 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/lines", s.handleListLines())
 	mux.Handle("GET /api/lines/{id}", s.handleGetLine())
 
+	// Categorization mutations and the undo/redo stack (M2)
+	mux.Handle("POST /api/lines/categorize", s.handleBulkCategorize())
+	mux.Handle("POST /api/lines/{id}/categorize", s.handleCategorizeLine())
+	mux.Handle("POST /api/lines/{id}/spread", s.handleSetSpread())
+	mux.Handle("POST /api/lines/{id}/reset", s.handleResetLine())
+	mux.Handle("GET /api/actions", s.handleListActions())
+	mux.Handle("POST /api/actions/undo", s.handleUndo())
+	mux.Handle("POST /api/actions/redo", s.handleRedo())
+
 	// Settings
 	mux.Handle("GET /api/settings", s.handleGetSettings())
 	mux.Handle("PUT /api/settings", s.handleUpdateSettings())

@@ -17,6 +17,7 @@ export interface StatementFilters {
 	order: 'asc' | 'desc';
 	page: number;
 	pageSize: number;
+	focus: string; // focused line id (categorize page, STMT-6), '' = unset
 }
 
 export const DEFAULT_PAGE_SIZE = 50;
@@ -38,7 +39,8 @@ export function defaultFilters(): StatementFilters {
 		sort: 'date',
 		order: 'desc',
 		page: 1,
-		pageSize: DEFAULT_PAGE_SIZE
+		pageSize: DEFAULT_PAGE_SIZE,
+		focus: ''
 	};
 }
 
@@ -73,6 +75,7 @@ export function filtersFromParams(sp: URLSearchParams): StatementFilters {
 		1,
 		parseInt(sp.get('pageSize') ?? String(DEFAULT_PAGE_SIZE), 10) || DEFAULT_PAGE_SIZE
 	);
+	f.focus = sp.get('focus') ?? '';
 	return f;
 }
 
@@ -95,6 +98,7 @@ export function paramsFromFilters(f: StatementFilters): URLSearchParams {
 	if (f.order !== 'desc') sp.set('order', f.order);
 	if (f.page !== 1) sp.set('page', String(f.page));
 	if (f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('pageSize', String(f.pageSize));
+	if (f.focus) sp.set('focus', f.focus);
 	return sp;
 }
 

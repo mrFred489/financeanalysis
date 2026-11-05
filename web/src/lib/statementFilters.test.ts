@@ -86,3 +86,21 @@ describe('date presets', () => {
 		expect(rangeToPreset('2020-01-01', '2020-02-01', today)).toBe('custom');
 	});
 });
+
+describe('focus param (STMT-6 deep links)', () => {
+	it('round-trips the focus param and omits it when empty', () => {
+		const f = defaultFilters();
+		f.source = 'none,conflict';
+		f.focus = '42';
+		const sp = paramsFromFilters(f);
+		expect(sp.get('focus')).toBe('42');
+		expect(sp.get('source')).toBe('none,conflict');
+
+		const back = filtersFromParams(sp);
+		expect(back.focus).toBe('42');
+		expect(back.source).toBe('none,conflict');
+
+		expect(paramsFromFilters(defaultFilters()).get('focus')).toBe(null);
+		expect(filtersFromParams(new URLSearchParams()).focus).toBe('');
+	});
+});

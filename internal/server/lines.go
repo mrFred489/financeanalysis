@@ -95,7 +95,7 @@ const linesWhere = `WHERE (? IS NULL OR sl.booking_date >= ?)
   AND (? IS NULL OR sl.message LIKE '%' || ? || '%')
   AND (? IS NULL OR sc.category_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?)))
   AND (? IS NULL OR sl.subcategory_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?)))
-  AND (? IS NULL OR sl.source = ?)
+  AND (? IS NULL OR sl.source IN (SELECT value FROM json_each(?)))
   AND (? IS NULL OR sl.import_id = ?)
   AND (? IS NULL OR sl.spread_months > ?)`
 
@@ -172,6 +172,36 @@ func parseIDList(s string) string {
 	return string(b)
 }
 
+// validSources are the allowed values of statement_line.source (schema CHECK).
+var validSources = map[string]bool{
+	"none": true, "rule": true, "manual": true, "transfer": true, "conflict": true,
+}
+
+// parseSourceList parses the comma-separated `source` param (D6: single values
+// keep working) into a JSON array string for the json_each() filter. Returns an
+// error on unknown values.
+func parseSourceList(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	var sources []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !validSources[part] {
+			return "", fmt.Errorf("invalid source %q", part)
+		}
+		sources = append(sources, part)
+	}
+	if len(sources) == 0 {
+		return "", nil
+	}
+	b, _ := json.Marshal(sources)
+	return string(b), nil
+}
+
 var sortColumns = map[string]string{
 	"date":    "sl.booking_date",
 	"amount":  "sl.amount_minor",
@@ -191,8 +221,12 @@ func parseLineFilters(r *http.Request) (*lineFilters, string, string, int, int, 
 		message:       q.Get("message"),
 		categories:    parseIDList(q.Get("categories")),
 		subcategories: parseIDList(q.Get("subcategories")),
-		source:        q.Get("source"),
 	}
+	source, err := parseSourceList(q.Get("source"))
+	if err != nil {
+		return nil, "", "", 0, 0, err
+	}
+	f.source = source
 	if f.direction != "" && f.direction != "in" && f.direction != "out" && f.direction != "both" {
 		return nil, "", "", 0, 0, fmt.Errorf("invalid direction %q", f.direction)
 	}

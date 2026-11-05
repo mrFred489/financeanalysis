@@ -160,7 +160,11 @@ The `STRICT` keyword:
 - Enforces NOT NULL constraints immediately
 - Makes CHECK constraints more strict
 
-### 8. Use Explicit CHECK Constraints for Enums
+### 8. Never Drop/Rename Columns Referenced by `action_change` Snapshots
+
+Since migration `00004_m2_actions.sql`, the undo engine stores whole-row JSON snapshots in `action_change` and restores them **by column name**. Migrations must therefore never drop or rename columns of tables that actions reference (currently `statement_line`); add new nullable columns instead. If a column must change, backfill it in the same migration and keep the old name.
+
+### 9. Use Explicit CHECK Constraints for Enums
 
 SQLite doesn't have a native ENUM type. Use CHECK constraints instead:
 

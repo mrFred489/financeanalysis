@@ -17,6 +17,22 @@ type Account struct {
 	CreatedAt     string         `json:"created_at"`
 }
 
+type ActionChange struct {
+	ActionID   int64  `json:"action_id"`
+	Entity     string `json:"entity"`
+	EntityID   int64  `json:"entity_id"`
+	BeforeJson string `json:"before_json"`
+	AfterJson  string `json:"after_json"`
+}
+
+type ActionLog struct {
+	ID          int64          `json:"id"`
+	Kind        string         `json:"kind"`
+	Description string         `json:"description"`
+	CreatedAt   string         `json:"created_at"`
+	UndoneAt    sql.NullString `json:"undone_at"`
+}
+
 type Category struct {
 	ID    int64  `json:"id"`
 	Key   string `json:"key"`

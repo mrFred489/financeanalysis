@@ -99,6 +99,14 @@
 
 	let totalPages = $derived(data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1);
 	let allSubcategories = $derived(categories.flatMap((c) => c.subcategories));
+
+	// STMT-6: each row links to the categorize page with the same filters and
+	// that line focused.
+	function categorizeHref(lineId: number): string {
+		const sp = new URLSearchParams($page.url.searchParams.toString());
+		sp.set('focus', String(lineId));
+		return `/categorize?${sp.toString()}`;
+	}
 </script>
 
 <svelte:head>
@@ -327,7 +335,13 @@
 				{#if data}
 					{#each data.lines as line (line.id)}
 						<tr class="border-b last:border-0 hover:bg-gray-50">
-							<td class="py-1.5 px-3">{formatDate(line.bookingDate, $locale)}</td>
+							<td class="py-1.5 px-3"
+								><a
+									href={categorizeHref(line.id)}
+									class="text-blue-600 hover:underline"
+									data-categorize-line={line.id}>{formatDate(line.bookingDate, $locale)}</a
+								></td
+							>
 							<td class="py-1.5 px-3">{line.accountName}</td>
 							<td class="py-1.5 px-3 max-w-md truncate" title={line.message}>{line.message}</td>
 							<td

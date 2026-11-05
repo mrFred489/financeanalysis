@@ -32,7 +32,6 @@
 		"databaseMissing": "Database not found. Please create a database first."
 	},
 	"placeholder": {
-		"m2": "The categorization page is part of milestone M2 and not available yet.",
 		"m3": "Rules are part of milestone M3 and not available yet.",
 		"m5": "Charts are part of milestone M5 and not available yet."
 	},
@@ -179,5 +178,113 @@
 		"page": "Page",
 		"prev": "Previous",
 		"next": "Next"
+	},
+	"catz": {
+		"title": "Categorize",
+		"subtitle": "Assign subcategories with hotkeys. Lines stay visible (dimmed) after categorizing.",
+		"empty": "Nothing to categorize — no lines match the filters.",
+		"loading": "Loading…",
+		"selected": "{count} selected",
+		"detail": {
+			"title": "Focused line",
+			"account": "Account",
+			"message": "Message",
+			"amount": "Amount",
+			"balance": "Balance",
+			"bookingDate": "Booking date",
+			"transactionDate": "Transaction date",
+			"valueDate": "Value date",
+			"source": "Source",
+			"subcategory": "Subcategory",
+			"spread": "Spread (months)",
+			"bankRef": "Bank ref",
+			"counterparty": "Counterparty"
+		},
+		"palette": {
+			"title": "Subcategories",
+			"hint": "Press a hotkey or click to assign, then focus moves to the next line."
+		},
+		"picker": {
+			"title": "Pick a subcategory",
+			"placeholder": "Type to search…",
+			"empty": "No subcategory matches.",
+			"hint": "↑/↓ to move, Enter to assign, Esc to close"
+		},
+		"actions": {
+			"title": "Actions",
+			"createRule": "Create rule from this line",
+			"resolveConflict": "Resolve conflict",
+			"transfer": "Jump to transfer counterpart",
+			"spread": "Set spread…",
+			"reset": "Reset to rules",
+			"laterMilestone": "Available in a later milestone"
+		},
+		"spreadDialog": {
+			"title": "Spread over months",
+			"label": "Months (1–36)",
+			"save": "Save",
+			"cancel": "Cancel",
+			"invalid": "Enter a whole number between 1 and 36."
+		},
+		"shortcuts": {
+			"title": "Keyboard shortcuts",
+			"move": "Move focus",
+			"assign": "Assign subcategory (hotkey)",
+			"picker": "Open subcategory picker",
+			"spread": "Set spread months",
+			"reset": "Reset to rules",
+			"undo": "Undo last action",
+			"redo": "Redo",
+			"filter": "Focus the filter",
+			"help": "This help",
+			"multiselect": "Extend selection",
+			"close": "Close dialog"
+		},
+		"hintBar": "↑/↓ move · hotkey assigns · space picker · s spread · ⌫ reset · ctrl+z undo · ? help",
+		"toasts": {
+			"assigned": "Assigned {subcategory} to {count} line(s)",
+			"undone": "Undone: {description}",
+			"redone": "Redone: {description}",
+			"nothingToUndo": "Nothing to undo",
+			"nothingToRedo": "Nothing to redo",
+			"error": "Action failed: {message}"
+		},
+		"filters": {
+			"message": "Message contains",
+			"source": "Source",
+			"direction": "Direction",
+			"all": "All",
+			"both": "Both",
+			"in": "In",
+			"out": "Out",
+			"moreFilters": "More filters",
+			"accounts": "Accounts",
+			"categories": "Categories",
+			"subcategories": "Subcategories",
+			"spreadGt": "Spread >",
+			"preset": "Period",
+			"presetAll": "All time",
+			"presetLast12m": "Last 12 months",
+			"presetYtd": "Year to date",
+			"presetPrevYear": "Previous year",
+			"presetCustom": "Custom",
+			"from": "From",
+			"to": "To"
+		},
+		"list": {
+			"date": "Date",
+			"account": "Account",
+			"message": "Message",
+			"amount": "Amount",
+			"subcategory": "Subcategory",
+			"source": "Source",
+			"spread": "Spread"
+		},
+		"pager": {
+			"rows": "rows",
+			"page": "Page",
+			"prev": "Previous",
+			"next": "Next"
+		}
 	}
 }

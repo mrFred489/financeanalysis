@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
@@ -16,5 +17,9 @@ export default defineConfig({
 				changeOrigin: true
 			}
 		}
+	},
+	test: {
+		// e2e/*.spec.ts run via Playwright against the native binary, not vitest
+		include: ['src/**/*.test.ts']
 	}
 });

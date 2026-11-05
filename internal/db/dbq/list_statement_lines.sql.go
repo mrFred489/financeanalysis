@@ -33,7 +33,7 @@ WHERE (?1 IS NULL OR sl.booking_date >= ?1)
   AND (?7 IS NULL OR sl.message LIKE '%' || ?7 || '%')
   AND (?8 IS NULL OR sc.category_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?8)))
   AND (?9 IS NULL OR sl.subcategory_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?9)))
-  AND (?10 IS NULL OR sl.source = ?10)
+  AND (?10 IS NULL OR sl.source IN (SELECT value FROM json_each(?10)))
   AND (?11 IS NULL OR sl.import_id = ?11)
   AND (?12 IS NULL OR sl.spread_months > ?12)
 ORDER BY sl.booking_date DESC, sl.seq DESC, sl.id

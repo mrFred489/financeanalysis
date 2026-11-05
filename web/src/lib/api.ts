@@ -434,4 +434,69 @@ export async function updateSettings(settings: Record<string, string>): Promise<
 	});
 }
 
+// --- M2 categorization + undo/redo ---
+
+export interface ActionChange {
+	entity: string;
+	entityId: number;
+	beforeJson: string;
+	afterJson: string;
+}
+
+export interface Action {
+	id: number;
+	kind: string;
+	description: string;
+	createdAt: string;
+	undoneAt: string | null;
+	changeCount: number;
+	changes?: ActionChange[];
+}
+
+export async function categorizeLine(
+	lineId: number,
+	subcategoryId: number
+): Promise<StatementLine> {
+	return apiFetch<StatementLine>(`/lines/${lineId}/categorize`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ subcategoryId })
+	});
+}
+
+export async function bulkCategorize(
+	lineIds: number[],
+	subcategoryId: number
+): Promise<{ lines: StatementLine[] }> {
+	return apiFetch<{ lines: StatementLine[] }>('/lines/categorize', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ lineIds, subcategoryId })
+	});
+}
+
+export async function setLineSpread(lineId: number, months: number): Promise<StatementLine> {
+	return apiFetch<StatementLine>(`/lines/${lineId}/spread`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ months })
+	});
+}
+
+export async function resetLine(lineId: number): Promise<StatementLine> {
+	return apiFetch<StatementLine>(`/lines/${lineId}/reset`, { method: 'POST' });
+}
+
+export async function listActions(limit = 50): Promise<Action[]> {
+	return apiFetch<Action[]>(`/actions?limit=${limit}`);
+}
+
+export async function undoAction(): Promise<Action> {
+	return apiFetch<Action>('/actions/undo', { method: 'POST' });
+}
+
+export async function redoAction(): Promise<Action> {
+	return apiFetch<Action>('/actions/redo', { method: 'POST' });
+}
+
 export { ni };
