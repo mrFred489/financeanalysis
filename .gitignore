@@ -37,6 +37,7 @@ Thumbs.db
 npm-debug.log*
 
 # Test outputs
+testdata/generated/
 coverage/
 playwright-report/
 test-results/

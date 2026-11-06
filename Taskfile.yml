@@ -159,6 +159,11 @@ tasks:
     generates:
       - '{{.BINARY_PATH}}'
 
+  gen:csv:
+    desc: Generate high-variance CSV test files for import testing into testdata/generated (gitignored)
+    cmds:
+      - go run ./cmd/csvgen {{.CLI_ARGS}}
+
   test:go:
     desc: Run Go tests
     cmds:
@@ -239,6 +244,7 @@ tasks:
     - dev:ports
     - dev:reset
     - generate
+    - gen:csv
     - build:web
     - build
     - test:go
