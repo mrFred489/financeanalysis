@@ -19,6 +19,7 @@ import (
 	"github.com/mrFred489/financeanalysis/internal/csvparse"
 	"github.com/mrFred489/financeanalysis/internal/db"
 	"github.com/mrFred489/financeanalysis/internal/db/dbq"
+	"github.com/mrFred489/financeanalysis/internal/rules"
 )
 
 // ErrInvalidPreviewToken is returned when the preview token does not match the
@@ -56,7 +57,9 @@ type CommitResult struct {
 	FileName          string                `json:"fileName"`
 	LinesImported     int                   `json:"linesImported"`
 	DuplicatesSkipped int                   `json:"duplicatesSkipped"`
-	Uncategorized     int                   `json:"uncategorized"` // all lines in M1 (source = 'none')
+	Uncategorized     int                   `json:"uncategorized"`   // source = 'none' after rule evaluation
+	RuleCategorized   int                   `json:"ruleCategorized"` // IMP-11/12: source = 'rule'
+	RuleConflicts     int                   `json:"ruleConflicts"`   // IMP-12: source = 'conflict'
 	ParseErrors       []csvparse.ParseError `json:"parseErrors"`
 }
 
@@ -288,8 +291,9 @@ func Commit(ctx context.Context, d *sql.DB, secret []byte, backupDir string, acc
 		return nil, err
 	}
 
+	newLineIDs := make([]int64, 0, len(newLines))
 	for _, line := range newLines {
-		_, err := q.InsertStatementLine(ctx, dbq.InsertStatementLineParams{
+		id, err := q.InsertStatementLine(ctx, dbq.InsertStatementLineParams{
 			AccountID:           accountID,
 			ImportID:            sql.NullInt64{Int64: batch.ID, Valid: true},
 			BookingDate:         line.Date,
@@ -308,6 +312,14 @@ func Commit(ctx context.Context, d *sql.DB, secret []byte, backupDir string, acc
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert line from row %d: %w", line.FileRow, err)
 		}
+		newLineIDs = append(newLineIDs, id)
+	}
+
+	// IMP-11 (M3 D11): run rule evaluation on the new lines inside the import
+	// transaction. Not recorded in the action log (UNDO-4: the import has its
+	// own undo, which deletes the lines and cascades conflict_resolution).
+	if _, err := rules.EvaluateLines(ctx, q, newLineIDs); err != nil {
+		return nil, fmt.Errorf("rule evaluation failed: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -318,12 +330,28 @@ func Commit(ctx context.Context, d *sql.DB, secret []byte, backupDir string, acc
 		return nil, err
 	}
 
+	// IMP-12: result counts per source within this import batch (after commit,
+	// so use the plain handle, not the transaction-bound one)
+	qDone := dbq.New(d)
+	countBySource := func(source string) int {
+		n, err := qDone.CountStatementLines(ctx, dbq.CountStatementLinesParams{
+			Source:   source,
+			ImportID: sql.NullInt64{Int64: batch.ID, Valid: true},
+		})
+		if err != nil {
+			return 0
+		}
+		return int(n)
+	}
+
 	return &CommitResult{
 		ImportID:          batch.ID,
 		FileName:          fileName,
 		LinesImported:     len(newLines),
 		DuplicatesSkipped: duplicates,
-		Uncategorized:     len(newLines), // M1: every line has source = 'none'
+		Uncategorized:     countBySource(`["none"]`),
+		RuleCategorized:   countBySource(`["rule"]`),
+		RuleConflicts:     countBySource(`["conflict"]`),
 		ParseErrors:       parsed.Errors,
 	}, nil
 }

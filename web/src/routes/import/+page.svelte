@@ -244,6 +244,16 @@
 					<dt class="text-gray-500">{$i18n.t('import.uncategorized')}</dt>
 					<dd class="font-medium">{result.uncategorized}</dd>
 				</div>
+				<div>
+					<dt class="text-gray-500">{$i18n.t('import.ruleCategorized')}</dt>
+					<dd class="font-medium text-purple-700" data-rule-categorized>
+						{result.ruleCategorized}
+					</dd>
+				</div>
+				<div>
+					<dt class="text-gray-500">{$i18n.t('import.ruleConflicts')}</dt>
+					<dd class="font-medium text-red-700" data-rule-conflicts>{result.ruleConflicts}</dd>
+				</div>
 			</dl>
 			<div class="flex gap-2">
 				<button

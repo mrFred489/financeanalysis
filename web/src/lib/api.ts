@@ -145,6 +145,8 @@ export interface CommitResult {
 	linesImported: number;
 	duplicatesSkipped: number;
 	uncategorized: number;
+	ruleCategorized: number; // M3 IMP-11/12: lines auto-categorized by rules on import
+	ruleConflicts: number; // M3 IMP-12: lines left in conflict
 	parseErrors: ParseError[];
 }
 
@@ -497,6 +499,146 @@ export async function undoAction(): Promise<Action> {
 
 export async function redoAction(): Promise<Action> {
 	return apiFetch<Action>('/actions/redo', { method: 'POST' });
+}
+
+// --- M3 rules (RULE-1..9) ---
+
+export type RuleDirection = 'in' | 'out' | 'both';
+
+export interface Rule {
+	id: number;
+	name: string;
+	pattern: string;
+	direction: RuleDirection;
+	subcategoryId: number;
+	subcategoryName: string | null;
+	subcategoryColor: string | null;
+	enabled: boolean;
+	accountIds: number[];
+	matchCount: number;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface RuleInput {
+	name: string;
+	pattern: string;
+	direction: RuleDirection;
+	subcategoryId: number;
+	accountIds: number[];
+	enabled: boolean;
+	/** set when previewing while editing, so the stored rule is replaced by this definition */
+	id?: number;
+}
+
+export interface PreviewGroup {
+	count: number;
+	sampleLineIds: number[];
+}
+
+export interface PreviewResult {
+	willCategorize: PreviewGroup;
+	alreadyThisRule: PreviewGroup;
+	willConflict: PreviewGroup;
+	unaffectedManual: PreviewGroup;
+	unaffectedTransfer: PreviewGroup;
+	staysWithResolution: PreviewGroup;
+	totalMatches: number;
+}
+
+export interface RemovedLine {
+	lineId: number;
+	future: 'none' | 'conflict' | 'rule';
+	ruleId?: number;
+	subcategoryId?: number;
+}
+
+export interface DiffResult {
+	added: number[];
+	removed: number[];
+	unchanged: number[];
+	removedFuture: RemovedLine[];
+	removedFutureTotal: number;
+}
+
+export interface RuleRef {
+	id: number;
+	name: string;
+	pattern: string;
+}
+
+export interface ConflictEntry {
+	line: StatementLine;
+	rules: RuleRef[];
+	resolutionRuleId: number | null;
+}
+
+export async function listRules(queryString = ''): Promise<Rule[]> {
+	return apiFetch<Rule[]>(`/rules${queryString ? '?' + queryString : ''}`);
+}
+
+export async function getRule(id: number): Promise<Rule> {
+	return apiFetch<Rule>(`/rules/${id}`);
+}
+
+export async function createRule(input: RuleInput): Promise<Rule> {
+	return apiFetch<Rule>('/rules', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(input)
+	});
+}
+
+export async function updateRule(id: number, input: RuleInput): Promise<Rule> {
+	return apiFetch<Rule>(`/rules/${id}`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(input)
+	});
+}
+
+export async function toggleRule(id: number, enabled: boolean): Promise<Rule> {
+	return apiFetch<Rule>(`/rules/${id}/toggle`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ enabled })
+	});
+}
+
+export async function deleteRule(id: number): Promise<void> {
+	await apiFetch(`/rules/${id}`, { method: 'DELETE' });
+}
+
+export async function previewRules(input: RuleInput): Promise<PreviewResult> {
+	return apiFetch<PreviewResult>('/rules/preview', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(input)
+	});
+}
+
+export async function diffRule(id: number, input: RuleInput): Promise<DiffResult> {
+	return apiFetch<DiffResult>(`/rules/${id}/diff`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(input)
+	});
+}
+
+export async function listConflicts(): Promise<ConflictEntry[]> {
+	return apiFetch<ConflictEntry[]>('/conflicts');
+}
+
+export async function resolveConflict(lineId: number, ruleId: number): Promise<StatementLine> {
+	return apiFetch<StatementLine>(`/lines/${lineId}/resolve-conflict`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ruleId })
+	});
+}
+
+export async function unresolveConflict(lineId: number): Promise<StatementLine> {
+	return apiFetch<StatementLine>(`/lines/${lineId}/resolve-conflict`, { method: 'DELETE' });
 }
 
 export { ni };

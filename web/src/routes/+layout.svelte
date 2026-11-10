@@ -36,7 +36,7 @@
 	const navItems = [
 		{ href: '/statements', key: 'nav.statements' },
 		{ href: '/categorize', key: 'nav.categorize' },
-		{ href: '/rules', key: 'nav.rules', disabled: true },
+		{ href: '/rules', key: 'nav.rules' },
 		{ href: '/visualize', key: 'nav.visualize', disabled: true },
 		{ href: '/import', key: 'nav.import' },
 		{ href: '/settings', key: 'nav.settings' }

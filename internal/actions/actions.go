@@ -30,18 +30,35 @@ var ErrNothingToUndo = errors.New("nothing to undo")
 var ErrNothingToRedo = errors.New("nothing to redo")
 
 // Entity names stored in action_change.entity.
-const EntityStatementLine = "statement_line"
+const (
+	EntityStatementLine      = "statement_line"
+	EntityRule               = "rule"                // M3 (plan D12): snapshot includes accountIds
+	EntityConflictResolution = "conflict_resolution" // M3 (plan D7): keyed by line_id
+)
 
 // entityColumns whitelists the restorable columns per entity. Snapshots restore
 // only known columns; migrations must not drop/rename these columns
 // (docs/migrations.md section 8). The entity name itself only ever comes from
-// this map's keys, so building the UPDATE statement from it is safe.
+// this map's keys, so building the statements from it is safe.
 var entityColumns = map[string][]string{
 	EntityStatementLine: {
 		"id", "account_id", "import_id", "booking_date", "transaction_date", "value_date",
 		"message", "amount_minor", "balance_minor", "currency", "bank_ref", "counterparty_account",
 		"file_row", "seq", "occurrence", "subcategory_id", "source", "rule_id", "spread_months",
 	},
+	EntityRule: {
+		"id", "name", "pattern", "direction", "subcategory_id", "enabled", "created_at", "updated_at",
+	},
+	EntityConflictResolution: {
+		"line_id", "rule_id", "created_at",
+	},
+}
+
+// entityKey is the column that identifies a row of the entity (its PK).
+var entityKey = map[string]string{
+	EntityStatementLine:      "id",
+	EntityRule:               "id",
+	EntityConflictResolution: "line_id",
 }
 
 // Change is one affected row of an action. Before/After are full row structs
@@ -235,39 +252,100 @@ func actionWithChanges(row *dbq.ActionLog, changes []*dbq.ActionChange) *Action 
 	return a
 }
 
-// applySnapshot restores one row from a whole-row JSON snapshot: it updates the
-// whitelisted columns present in the snapshot, addressed by the row id.
+// applySnapshot restores one row from a whole-row JSON snapshot. A literal
+// "null" snapshot means the row did not exist in that state (e.g. undoing a
+// create), so the row is deleted. Otherwise the row is upserted by its entity
+// key with the whitelisted columns present in the snapshot, so undo can also
+// restore a previously deleted row (e.g. redoing a delete).
+//
+// Custom hook (plan D12): a "rule" snapshot carries the account filter as an
+// "accountIds" JSON array; after upserting the rule row, rule_account is
+// re-synced from it (delete + insert), because rule_account has no single id
+// column of its own.
 func applySnapshot(ctx context.Context, q dbq.DBTX, entity string, entityID int64, snapshot string) error {
 	columns, ok := entityColumns[entity]
 	if !ok {
 		return fmt.Errorf("unknown action entity %q", entity)
 	}
+	key := entityKey[entity]
 	dec := json.NewDecoder(strings.NewReader(snapshot))
 	dec.UseNumber()
 	var row map[string]any
 	if err := dec.Decode(&row); err != nil {
 		return fmt.Errorf("decode %s snapshot for id %d: %w", entity, entityID, err)
 	}
-	setCols := make([]string, 0, len(columns))
-	args := make([]any, 0, len(columns)+1)
-	for _, col := range columns {
-		if col == "id" {
-			continue
+	if row == nil {
+		// "null" snapshot: the row must not exist in this state
+		stmt := fmt.Sprintf(`DELETE FROM "%s" WHERE "%s" = ?`, entity, key)
+		if _, err := q.ExecContext(ctx, stmt, entityID); err != nil {
+			return fmt.Errorf("delete %s id %d: %w", entity, entityID, err)
 		}
+		return nil
+	}
+	cols := make([]string, 0, len(columns))
+	args := make([]any, 0, len(columns))
+	for _, col := range columns {
 		v, present := row[col]
 		if !present {
 			continue // snapshot from an older schema: restore only known columns
 		}
-		setCols = append(setCols, `"`+col+`" = ?`)
+		cols = append(cols, `"`+col+`"`)
 		args = append(args, jsonValue(v))
 	}
-	if len(setCols) == 0 {
+	if len(cols) == 0 {
 		return fmt.Errorf("snapshot for %s id %d has no restorable columns", entity, entityID)
 	}
-	args = append(args, entityID)
-	stmt := fmt.Sprintf(`UPDATE "%s" SET %s WHERE id = ?`, entity, strings.Join(setCols, ", "))
+	setCols := make([]string, 0, len(cols))
+	for _, c := range cols {
+		if c == `"`+key+`"` {
+			continue
+		}
+		setCols = append(setCols, c+" = excluded."+c)
+	}
+	var stmt string
+	if len(setCols) == 0 {
+		// only the key column: nothing to update on conflict
+		stmt = fmt.Sprintf(`INSERT OR IGNORE INTO "%s" (%s) VALUES (%s)`,
+			entity, strings.Join(cols, ", "), placeholders(len(cols)))
+	} else {
+		stmt = fmt.Sprintf(`INSERT INTO "%s" (%s) VALUES (%s) ON CONFLICT("%s") DO UPDATE SET %s`,
+			entity, strings.Join(cols, ", "), placeholders(len(cols)), key, strings.Join(setCols, ", "))
+	}
 	if _, err := q.ExecContext(ctx, stmt, args...); err != nil {
 		return fmt.Errorf("restore %s id %d: %w", entity, entityID, err)
+	}
+	if entity == EntityRule {
+		if err := resyncRuleAccounts(ctx, q, entityID, row["accountIds"]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func placeholders(n int) string {
+	s := make([]string, n)
+	for i := range s {
+		s[i] = "?"
+	}
+	return strings.Join(s, ", ")
+}
+
+// resyncRuleAccounts replaces the rule_account rows of a rule from the
+// "accountIds" array of a rule snapshot (plan D12). A missing key leaves the
+// current rows untouched (snapshots from before M3).
+func resyncRuleAccounts(ctx context.Context, q dbq.DBTX, ruleID int64, accountIDs any) error {
+	arr, ok := accountIDs.([]any)
+	if !ok {
+		return nil
+	}
+	if _, err := q.ExecContext(ctx, `DELETE FROM rule_account WHERE rule_id = ?`, ruleID); err != nil {
+		return fmt.Errorf("clear rule_account for rule %d: %w", ruleID, err)
+	}
+	for _, v := range arr {
+		id := jsonValue(v)
+		if _, err := q.ExecContext(ctx, `INSERT INTO rule_account (rule_id, account_id) VALUES (?, ?)`, ruleID, id); err != nil {
+			return fmt.Errorf("restore rule_account for rule %d: %w", ruleID, err)
+		}
 	}
 	return nil
 }

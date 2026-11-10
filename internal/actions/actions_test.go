@@ -324,3 +324,265 @@ func TestListIncludesChangeCountAndUndoneFlag(t *testing.T) {
 		t.Fatalf("list after undo: %+v", list)
 	}
 }
+
+// --- M3 entities: rule and conflict_resolution (plan step 3, D12) ---
+
+// ruleSnapshot is the whole-row rule snapshot shape recorded by the M3 server:
+// the rule row plus its account filter as accountIds (restored by the hook).
+type ruleSnapshot struct {
+	dbq.Rule
+	AccountIDs []int64 `json:"accountIds"`
+}
+
+func insertRule(t *testing.T, ctx context.Context, q dbq.DBTX, name, pattern string, subID int64, enabled bool, accountIDs ...int64) int64 {
+	t.Helper()
+	var en int64
+	if enabled {
+		en = 1
+	}
+	r, err := dbq.New(q).CreateRule(ctx, dbq.CreateRuleParams{
+		Name: name, Pattern: pattern, Direction: "both", SubcategoryID: subID, Enabled: en,
+	})
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	for _, a := range accountIDs {
+		if err := dbq.New(q).InsertRuleAccount(ctx, dbq.InsertRuleAccountParams{RuleID: r.ID, AccountID: a}); err != nil {
+			t.Fatalf("InsertRuleAccount: %v", err)
+		}
+	}
+	return r.ID
+}
+
+func ruleAccounts(t *testing.T, ctx context.Context, q dbq.DBTX, ruleID int64) []int64 {
+	t.Helper()
+	rows, err := dbq.New(q).ListAccountsForRule(ctx, ruleID)
+	if err != nil {
+		t.Fatalf("ListAccountsForRule: %v", err)
+	}
+	return append([]int64{}, rows...)
+}
+
+func ruleExists(t *testing.T, ctx context.Context, d *sql.DB, ruleID int64) bool {
+	t.Helper()
+	var n int64
+	if err := d.QueryRowContext(ctx, "SELECT COUNT(*) FROM rule WHERE id = ?", ruleID).Scan(&n); err != nil {
+		t.Fatalf("count rule: %v", err)
+	}
+	return n == 1
+}
+
+// TestUndoRuleCreate: undoing a rule create deletes the rule (and its account
+// rows via cascade) and restores the affected lines; redo re-creates all.
+func TestUndoRuleCreate(t *testing.T) {
+	ctx := context.Background()
+	d, _ := newTestDB(t)
+	acc := insertAccount(t, ctx, d, "Main")
+	line := insertLine(t, ctx, d, acc, 1, "NETTO STORES", -100)
+
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	q := dbq.New(tx)
+	ruleID := insertRule(t, ctx, tx, "Groceries", `^NETTO`, 6, true, acc)
+	before := getLine(t, ctx, tx, line)
+	if err := q.UpdateLineSource(ctx, dbq.UpdateLineSourceParams{
+		SubcategoryID: sql.NullInt64{Int64: 6, Valid: true}, Source: "rule",
+		RuleID: sql.NullInt64{Int64: ruleID, Valid: true}, ID: line,
+	}); err != nil {
+		t.Fatalf("UpdateLineSource: %v", err)
+	}
+	after := getLine(t, ctx, tx, line)
+	ruleRow, err := q.GetRule(ctx, ruleID)
+	if err != nil {
+		t.Fatalf("GetRule: %v", err)
+	}
+	snapshot := ruleSnapshot{Rule: *ruleRow, AccountIDs: []int64{acc}}
+	if _, err := Record(ctx, tx, "rule_create", "Created rule Groceries", []Change{
+		{Entity: EntityRule, EntityID: ruleID, Before: nil, After: snapshot},
+		{Entity: EntityStatementLine, EntityID: line, Before: before, After: after},
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if _, err := Undo(ctx, d); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	if ruleExists(t, ctx, d, ruleID) {
+		t.Errorf("undo of rule_create must delete the rule row")
+	}
+	if got := ruleAccounts(t, ctx, d, ruleID); len(got) != 0 {
+		t.Errorf("rule_account rows must be gone after undo, got %v", got)
+	}
+	sub, src := subcategoryOf(t, ctx, d, line)
+	if sub.Valid || src != "none" {
+		t.Errorf("after undo: sub=%v src=%q, want NULL/none", sub, src)
+	}
+
+	if _, err := Redo(ctx, d); err != nil {
+		t.Fatalf("Redo: %v", err)
+	}
+	if !ruleExists(t, ctx, d, ruleID) {
+		t.Errorf("redo must re-create the rule row")
+	}
+	r, err := dbq.New(d).GetRule(ctx, ruleID)
+	if err != nil || r.Pattern != "^NETTO" || r.Enabled != 1 {
+		t.Errorf("redo rule row wrong: %+v err=%v", r, err)
+	}
+	if got := ruleAccounts(t, ctx, d, ruleID); len(got) != 1 || got[0] != acc {
+		t.Errorf("redo must restore rule_account rows, got %v", got)
+	}
+	sub, src = subcategoryOf(t, ctx, d, line)
+	if !sub.Valid || sub.Int64 != 6 || src != "rule" {
+		t.Errorf("after redo: sub=%v src=%q, want 6/rule", sub, src)
+	}
+}
+
+// TestUndoRuleEdit: undoing an edit restores the old pattern and the old
+// account filter, plus the line assignments.
+func TestUndoRuleEdit(t *testing.T) {
+	ctx := context.Background()
+	d, _ := newTestDB(t)
+	acc := insertAccount(t, ctx, d, "Main")
+	other := insertAccount(t, ctx, d, "Savings")
+	line := insertLine(t, ctx, d, acc, 1, "BILKA STORE", -100)
+
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	q := dbq.New(tx)
+	ruleID := insertRule(t, ctx, tx, "Shops", `^NETTO`, 6, true, acc)
+	if err := q.UpdateLineSource(ctx, dbq.UpdateLineSourceParams{
+		SubcategoryID: sql.NullInt64{Int64: 6, Valid: true}, Source: "rule",
+		RuleID: sql.NullInt64{Int64: ruleID, Valid: true}, ID: line,
+	}); err != nil {
+		t.Fatalf("UpdateLineSource: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	// edit: new pattern + new account filter, line drops back to none
+	tx, err = d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	q = dbq.New(tx)
+	beforeRule, _ := q.GetRule(ctx, ruleID)
+	beforeLine := getLine(t, ctx, tx, line)
+	if _, err := q.UpdateRule(ctx, dbq.UpdateRuleParams{
+		Name: "Shops", Pattern: `^BILKA`, Direction: "both", SubcategoryID: 6, Enabled: 1, ID: ruleID,
+	}); err != nil {
+		t.Fatalf("UpdateRule: %v", err)
+	}
+	if err := q.DeleteRuleAccountsForRule(ctx, ruleID); err != nil {
+		t.Fatalf("DeleteRuleAccountsForRule: %v", err)
+	}
+	if err := q.InsertRuleAccount(ctx, dbq.InsertRuleAccountParams{RuleID: ruleID, AccountID: other}); err != nil {
+		t.Fatalf("InsertRuleAccount: %v", err)
+	}
+	if err := q.UpdateLineSource(ctx, dbq.UpdateLineSourceParams{
+		SubcategoryID: sql.NullInt64{}, Source: "none", RuleID: sql.NullInt64{}, ID: line,
+	}); err != nil {
+		t.Fatalf("UpdateLineSource: %v", err)
+	}
+	afterRule, _ := q.GetRule(ctx, ruleID)
+	afterLine := getLine(t, ctx, tx, line)
+	if _, err := Record(ctx, tx, "rule_edit", "Edited rule Shops", []Change{
+		{Entity: EntityRule, EntityID: ruleID, Before: ruleSnapshot{Rule: *beforeRule, AccountIDs: []int64{acc}}, After: ruleSnapshot{Rule: *afterRule, AccountIDs: []int64{other}}},
+		{Entity: EntityStatementLine, EntityID: line, Before: beforeLine, After: afterLine},
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if _, err := Undo(ctx, d); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	r, err := dbq.New(d).GetRule(ctx, ruleID)
+	if err != nil || r.Pattern != "^NETTO" {
+		t.Errorf("undo must restore old pattern, got %+v err=%v", r, err)
+	}
+	if got := ruleAccounts(t, ctx, d, ruleID); len(got) != 1 || got[0] != acc {
+		t.Errorf("undo must restore old account filter, got %v", got)
+	}
+	sub, src := subcategoryOf(t, ctx, d, line)
+	if !sub.Valid || src != "rule" {
+		t.Errorf("undo must restore line assignment, got sub=%v src=%q", sub, src)
+	}
+}
+
+// TestUndoConflictResolution: resolving a conflict is undoable; undo restores
+// the conflict state and removes the remembered resolution.
+func TestUndoConflictResolution(t *testing.T) {
+	ctx := context.Background()
+	d, _ := newTestDB(t)
+	acc := insertAccount(t, ctx, d, "Main")
+	line := insertLine(t, ctx, d, acc, 1, "NETTO DINING", -100)
+	// put the line into conflict
+	if _, err := d.ExecContext(ctx, "UPDATE statement_line SET source = 'conflict' WHERE id = ?", line); err != nil {
+		t.Fatalf("set conflict: %v", err)
+	}
+
+	ruleID := insertRule(t, ctx, d, "Dining", `DINING`, 7, true)
+
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	q := dbq.New(tx)
+	before := getLine(t, ctx, tx, line)
+	cr, err := q.UpsertConflictResolution(ctx, dbq.UpsertConflictResolutionParams{LineID: line, RuleID: ruleID})
+	if err != nil {
+		t.Fatalf("UpsertConflictResolution: %v", err)
+	}
+	if err := q.UpdateLineSource(ctx, dbq.UpdateLineSourceParams{
+		SubcategoryID: sql.NullInt64{Int64: 7, Valid: true}, Source: "rule",
+		RuleID: sql.NullInt64{Int64: ruleID, Valid: true}, ID: line,
+	}); err != nil {
+		t.Fatalf("UpdateLineSource: %v", err)
+	}
+	after := getLine(t, ctx, tx, line)
+	if _, err := Record(ctx, tx, "resolve_conflict", "Resolved conflict", []Change{
+		{Entity: EntityConflictResolution, EntityID: line, Before: nil, After: *cr},
+		{Entity: EntityStatementLine, EntityID: line, Before: before, After: after},
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if _, err := Undo(ctx, d); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	if _, err := dbq.New(d).GetConflictResolution(ctx, line); err != sql.ErrNoRows {
+		t.Errorf("undo must remove the conflict_resolution row, err=%v", err)
+	}
+	_, src := subcategoryOf(t, ctx, d, line)
+	if src != "conflict" {
+		t.Errorf("undo must restore source=conflict, got %q", src)
+	}
+
+	if _, err := Redo(ctx, d); err != nil {
+		t.Fatalf("Redo: %v", err)
+	}
+	cr2, err := dbq.New(d).GetConflictResolution(ctx, line)
+	if err != nil || cr2.RuleID != ruleID {
+		t.Errorf("redo must restore the resolution, got %+v err=%v", cr2, err)
+	}
+	_, src = subcategoryOf(t, ctx, d, line)
+	if src != "rule" {
+		t.Errorf("redo must restore source=rule, got %q", src)
+	}
+}

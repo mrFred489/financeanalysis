@@ -10,7 +10,25 @@ import (
 
 	"github.com/mrFred489/financeanalysis/internal/actions"
 	"github.com/mrFred489/financeanalysis/internal/db/dbq"
+	"github.com/mrFred489/financeanalysis/internal/rules"
 )
+
+// clearConflictResolution deletes any remembered conflict resolution for the
+// line (M3 D7: manual categorization of a conflicted line clears the remembered
+// choice) and returns an actions.Change when a row existed, so undo restores it.
+func clearConflictResolution(ctx context.Context, q *dbq.Queries, lineID int64) (*actions.Change, error) {
+	cr, err := q.GetConflictResolution(ctx, lineID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := q.DeleteConflictResolution(ctx, lineID); err != nil {
+		return nil, err
+	}
+	return &actions.Change{Entity: actions.EntityConflictResolution, EntityID: lineID, Before: *cr, After: nil}, nil
+}
 
 // M2 categorization mutation endpoints + the undo/redo API (plan step 3, D3).
 // Each mutation endpoint: validate -> begin tx -> snapshot before -> mutate ->
@@ -152,10 +170,18 @@ func (s *Server) handleCategorizeLine() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 			return
 		}
-		desc := fmt.Sprintf("Categorized line #%d as %s", id, sub.Name)
-		if _, err := actions.Record(ctx, tx, "categorize", desc, []actions.Change{
+		changes := []actions.Change{
 			{Entity: actions.EntityStatementLine, EntityID: id, Before: *before, After: *after},
-		}); err != nil {
+		}
+		// M3 D7: manual categorization of a conflicted line clears the remembered resolution
+		if crChange, err := clearConflictResolution(ctx, q, id); err != nil {
+			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
+			return
+		} else if crChange != nil {
+			changes = append(changes, *crChange)
+		}
+		desc := fmt.Sprintf("Categorized line #%d as %s", id, sub.Name)
+		if _, err := actions.Record(ctx, tx, "categorize", desc, changes); err != nil {
 			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 			return
 		}
@@ -226,6 +252,13 @@ func (s *Server) handleBulkCategorize() http.HandlerFunc {
 				return
 			}
 			changes = append(changes, actions.Change{Entity: actions.EntityStatementLine, EntityID: id, Before: *before, After: *after})
+			// M3 D7: manual categorization of a conflicted line clears the remembered resolution
+			if crChange, err := clearConflictResolution(ctx, q, id); err != nil {
+				writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
+				return
+			} else if crChange != nil {
+				changes = append(changes, *crChange)
+			}
 		}
 		desc := fmt.Sprintf("Categorized %d lines as %s", len(body.LineIDs), sub.Name)
 		if _, err := actions.Record(ctx, tx, "categorize_bulk", desc, changes); err != nil {
@@ -320,7 +353,9 @@ func (s *Server) handleSetSpread() http.HandlerFunc {
 	}
 }
 
-// handleResetLine: POST /api/lines/{id}/reset (D4: clears the manual assignment).
+// handleResetLine: POST /api/lines/{id}/reset (M3 D8: "reset to rules" clears
+// the manual assignment AND any conflict_resolution, then re-evaluates the line
+// through the rules engine; action kind stays "reset").
 func (s *Server) handleResetLine() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		d := s.requireDB(w, r)
@@ -351,7 +386,20 @@ func (s *Server) handleResetLine() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 			return
 		}
+		changes := []actions.Change{}
+		// D8: clear any remembered conflict resolution too
+		if crChange, err := clearConflictResolution(ctx, q, id); err != nil {
+			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
+			return
+		} else if crChange != nil {
+			changes = append(changes, *crChange)
+		}
+		// clear the manual assignment, then re-evaluate through the rules engine
 		if _, err := q.ResetLineToRules(ctx, id); err != nil {
+			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
+			return
+		}
+		if _, err := rules.EvaluateLines(ctx, q, []int64{id}); err != nil {
 			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 			return
 		}
@@ -360,10 +408,9 @@ func (s *Server) handleResetLine() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 			return
 		}
+		changes = append(changes, actions.Change{Entity: actions.EntityStatementLine, EntityID: id, Before: *before, After: *after})
 		desc := fmt.Sprintf("Reset line #%d to rules", id)
-		if _, err := actions.Record(ctx, tx, "reset", desc, []actions.Change{
-			{Entity: actions.EntityStatementLine, EntityID: id, Before: *before, After: *after},
-		}); err != nil {
+		if _, err := actions.Record(ctx, tx, "reset", desc, changes); err != nil {
 			writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 			return
 		}

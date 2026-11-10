@@ -116,6 +116,19 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/actions/undo", s.handleUndo())
 	mux.Handle("POST /api/actions/redo", s.handleRedo())
 
+	// Rules and conflicts (M3, plan docs/plans/M3-rules.md step 4)
+	mux.Handle("GET /api/rules", s.handleListRules())
+	mux.Handle("POST /api/rules", s.handleCreateRule())
+	mux.Handle("POST /api/rules/preview", s.handlePreviewRules())
+	mux.Handle("GET /api/rules/{id}", s.handleGetRule())
+	mux.Handle("PUT /api/rules/{id}", s.handleUpdateRule())
+	mux.Handle("POST /api/rules/{id}/toggle", s.handleToggleRule())
+	mux.Handle("POST /api/rules/{id}/diff", s.handleDiffRule())
+	mux.Handle("DELETE /api/rules/{id}", s.handleDeleteRule())
+	mux.Handle("GET /api/conflicts", s.handleListConflicts())
+	mux.Handle("POST /api/lines/{id}/resolve-conflict", s.handleResolveConflict())
+	mux.Handle("DELETE /api/lines/{id}/resolve-conflict", s.handleUnresolveConflict())
+
 	// Settings
 	mux.Handle("GET /api/settings", s.handleGetSettings())
 	mux.Handle("PUT /api/settings", s.handleUpdateSettings())

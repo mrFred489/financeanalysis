@@ -8,11 +8,14 @@
 		APIError,
 		bulkCategorize,
 		categorizeLine,
+		type ConflictEntry,
 		listAccounts,
 		listCategories,
+		listConflicts,
 		listLines,
 		redoAction,
 		resetLine,
+		resolveConflict,
 		setLineSpread,
 		undoAction
 	} from '$lib/api';
@@ -64,6 +67,8 @@
 	let toast = $state<string | null>(null);
 	let toastTimer: ReturnType<typeof setTimeout> | undefined;
 	let messageInput = $state<HTMLInputElement | null>(null);
+	let conflictOpen = $state(false);
+	let conflictEntries = $state<ConflictEntry[]>([]);
 
 	let fetchKey: string | null = null;
 
@@ -80,6 +85,12 @@
 	);
 	const lineIds = $derived(data?.lines.map((l) => l.id) ?? []);
 	const focused = $derived(data?.lines.find((l) => l.id === focusId) ?? null);
+	// M3: the focused line's conflict entry (matching rules + resolution), if any
+	const focusedConflict = $derived(
+		focused?.source === 'conflict'
+			? (conflictEntries.find((c) => c.line.id === focused.id) ?? null)
+			: null
+	);
 	const pickerItems = $derived(
 		allSubcategories.map((s) => ({
 			id: s.id,
@@ -90,7 +101,7 @@
 	);
 	const pickerResults = $derived(filterPickerItems(pickerQuery, pickerItems));
 	const pickerHighlight = $derived(pickerResults[Math.min(pickerIndex, pickerResults.length - 1)]);
-	const overlayOpen = $derived(pickerOpen || helpOpen || spreadOpen);
+	const overlayOpen = $derived(pickerOpen || helpOpen || spreadOpen || conflictOpen);
 	const totalPages = $derived(data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1);
 
 	// Filter state lives in the URL (D5); refetch only when the filter part changes.
@@ -259,6 +270,33 @@
 		}
 	}
 
+	// M3 CATZ-7: "resolve conflict" slot — list matching rules for the focused line
+	async function openConflictPanel() {
+		if (focusId === null) return;
+		try {
+			conflictEntries = await listConflicts();
+			conflictOpen = true;
+		} catch (err) {
+			showToast(
+				$i18n.t('catz.toasts.error', { message: err instanceof Error ? err.message : String(err) })
+			);
+		}
+	}
+
+	async function doResolveConflict(ruleId: number) {
+		if (focusId === null) return;
+		try {
+			await resolveConflict(focusId, ruleId);
+			conflictOpen = false;
+			showToast($i18n.t('catz.toasts.conflictResolved'));
+			await fetchLines(filters);
+		} catch (err) {
+			showToast(
+				$i18n.t('catz.toasts.error', { message: err instanceof Error ? err.message : String(err) })
+			);
+		}
+	}
+
 	async function saveSpread() {
 		if (focusId === null) return;
 		const n = parseInt(spreadValue, 10);
@@ -321,6 +359,9 @@
 				return;
 			case 'reset':
 				void doReset();
+				return;
+			case 'createRule':
+				if (focusId !== null) void goto(`/rules/new?fromLine=${focusId}`);
 				return;
 			case 'undo':
 				void doUndo();
@@ -395,6 +436,7 @@
 		['1–9, a–z (hotkey)', 'catz.shortcuts.assign'],
 		['Space', 'catz.shortcuts.picker'],
 		['s', 'catz.shortcuts.spread'],
+		['r', 'catz.shortcuts.createRule'],
 		['Backspace', 'catz.shortcuts.reset'],
 		['Ctrl+Z', 'catz.shortcuts.undo'],
 		['Ctrl+Shift+Z', 'catz.shortcuts.redo'],
@@ -764,17 +806,21 @@
 				<div class="flex flex-wrap gap-2 text-sm">
 					<button
 						type="button"
-						disabled
-						title={$i18n.t('catz.actions.laterMilestone')}
-						class="px-2 py-1.5 rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
-						>{$i18n.t('catz.actions.createRule')}</button
+						onclick={() => {
+							if (focusId !== null) void goto(`/rules/new?fromLine=${focusId}`);
+						}}
+						disabled={focusId === null}
+						title="r"
+						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+						data-create-rule>{$i18n.t('catz.actions.createRule')}</button
 					>
 					<button
 						type="button"
-						disabled
-						title={$i18n.t('catz.actions.laterMilestone')}
-						class="px-2 py-1.5 rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
-						>{$i18n.t('catz.actions.resolveConflict')}</button
+						onclick={() => void openConflictPanel()}
+						disabled={focused?.source !== 'conflict'}
+						title={$i18n.t('catz.actions.resolveConflict')}
+						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+						data-resolve-conflict>{$i18n.t('catz.actions.resolveConflict')}</button
 					>
 					<button
 						type="button"
@@ -911,6 +957,49 @@
 					onclick={() => void saveSpread()}
 					class="px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
 					>{$i18n.t('catz.spreadDialog.save')}</button
+				>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Resolve conflict panel (M3 CATZ-7) -->
+{#if conflictOpen && focusedConflict}
+	<div
+		class="fixed inset-0 bg-black/40 flex items-center justify-center z-40"
+		role="presentation"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) conflictOpen = false;
+		}}
+	>
+		<div class="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-md p-4">
+			<h2 class="font-semibold text-gray-900 mb-1">{$i18n.t('catz.conflict.title')}</h2>
+			<p class="text-xs text-gray-500 mb-3 break-words">{focusedConflict.line.message}</p>
+			<div class="flex flex-wrap gap-2">
+				{#each focusedConflict.rules as rule (rule.id)}
+					<button
+						type="button"
+						class="px-2 py-1.5 rounded-lg border text-sm hover:bg-purple-50 {focusedConflict.resolutionRuleId ===
+						rule.id
+							? 'border-purple-500 bg-purple-50'
+							: 'border-gray-300'}"
+						title={rule.pattern}
+						onclick={() => void doResolveConflict(rule.id)}
+						data-conflict-rule={rule.id}>{rule.name}</button
+					>
+				{/each}
+			</div>
+			<div class="flex justify-end gap-2 mt-4">
+				<a
+					href="/rules?tab=conflicts"
+					class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm hover:bg-gray-50"
+					>{$i18n.t('catz.conflict.allConflicts')}</a
+				>
+				<button
+					type="button"
+					onclick={() => (conflictOpen = false)}
+					class="px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+					>{$i18n.t('catz.conflict.close')}</button
 				>
 			</div>
 		</div>

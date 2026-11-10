@@ -32,7 +32,6 @@
 		"databaseMissing": "Database not found. Please create a database first."
 	},
 	"placeholder": {
-		"m3": "Rules are part of milestone M3 and not available yet.",
 		"m5": "Charts are part of milestone M5 and not available yet."
 	},
 	"welcome": {
@@ -134,7 +133,9 @@
 		"active": "Active",
 		"undone": "Undone",
 		"undo": "Undo",
-		"undoConfirm": "Undo this import? Its lines are deleted and the batch is marked undone. A backup is taken first."
+		"undoConfirm": "Undo this import? Its lines are deleted and the batch is marked undone. A backup is taken first.",
+		"ruleCategorized": "Auto-categorized by rules",
+		"ruleConflicts": "Rule conflicts"
 	},
 	"statements": {
 		"title": "Statements",
@@ -238,7 +239,8 @@
 			"filter": "Focus the filter",
 			"help": "This help",
 			"multiselect": "Extend selection",
-			"close": "Close dialog"
+			"close": "Close dialog",
+			"createRule": "Create rule from this line"
 		},
 		"hintBar": "↑/↓ move · hotkey assigns · space picker · s spread · ⌫ reset · ctrl+z undo · ? help",
 		"toasts": {
@@ -247,7 +249,8 @@
 			"redone": "Redone: {description}",
 			"nothingToUndo": "Nothing to undo",
 			"nothingToRedo": "Nothing to redo",
-			"error": "Action failed: {message}"
+			"error": "Action failed: {message}",
+			"conflictResolved": "Conflict resolved"
 		},
 		"filters": {
 			"message": "Message contains",
@@ -285,6 +288,103 @@
 			"page": "Page",
 			"prev": "Previous",
 			"next": "Next"
+		},
+		"conflict": {
+			"title": "Resolve conflict",
+			"allConflicts": "All conflicts",
+			"close": "Close"
+		}
+	},
+	"rules": {
+		"title": "Rules",
+		"subtitle": "Regex rules that categorize lines automatically. Saving a rule re-evaluates affected lines and is undoable.",
+		"newRule": "New rule",
+		"newTitle": "New rule",
+		"editTitle": "Edit rule",
+		"tabs": {
+			"rules": "Rules",
+			"conflicts": "Conflicts"
+		},
+		"list": {
+			"search": "Search name or pattern",
+			"enabled": "Enabled",
+			"subcategory": "Subcategory",
+			"all": "All",
+			"enabledOnly": "Enabled only",
+			"disabledOnly": "Disabled only",
+			"colName": "Name",
+			"colPattern": "Pattern",
+			"colSubcategory": "Target",
+			"colMatchCount": "Matches",
+			"colCreated": "Created",
+			"colDirection": "Direction",
+			"colAccounts": "Accounts",
+			"colEnabled": "State",
+			"disabled": "Disabled",
+			"edit": "Edit",
+			"delete": "Delete",
+			"confirmDelete": "Delete?",
+			"cancel": "Cancel",
+			"empty": "No rules yet. Create one, or press r on a line in the categorize page."
+		},
+		"form": {
+			"name": "Name",
+			"pattern": "Pattern (RE2 regex, matched against the message)",
+			"patternPlaceholder": "e.g. ^NETTO|(?i)mobilepay",
+			"direction": "Direction",
+			"directionBoth": "Both",
+			"directionIn": "Incoming (amount > 0)",
+			"directionOut": "Outgoing (amount < 0)",
+			"subcategory": "Target subcategory",
+			"accounts": "Accounts",
+			"accountsHint": "(none selected = all accounts)",
+			"enabled": "Enabled",
+			"invalidRegex": "Invalid regular expression",
+			"save": "Save rule",
+			"saving": "Saving…",
+			"cancel": "Cancel"
+		},
+		"preview": {
+			"mode": "Panel",
+			"previewMode": "Live preview",
+			"diffMode": "Edit diff",
+			"title": "Live preview",
+			"totalMatches": "matching lines",
+			"willCategorize": "Will be categorized",
+			"alreadyThisRule": "Already this rule",
+			"willConflict": "Will conflict",
+			"unaffectedManual": "Unaffected: manual",
+			"unaffectedTransfer": "Unaffected: transfer",
+			"staysWithResolution": "Keeps resolution"
+		},
+		"diff": {
+			"title": "Edit diff vs current rule",
+			"added": "Added",
+			"removed": "Removed",
+			"unchanged": "Unchanged",
+			"removedFuture": "Removed lines will become (showing {shown} of {total}):",
+			"future": {
+				"none": "uncategorized",
+				"conflict": "conflict",
+				"rule": "another rule"
+			}
+		},
+		"toasts": {
+			"toggled": "Rule {name} toggled",
+			"deleted": "Rule {name} deleted"
+		}
+	},
+	"conflicts": {
+		"empty": "No conflicts — every line matched by several rules has a remembered resolution.",
+		"colDate": "Date",
+		"colAccount": "Account",
+		"colMessage": "Message",
+		"colAmount": "Amount",
+		"colRules": "Matching rules (pick the winner)",
+		"editRule": "edit",
+		"categorizeManually": "Categorize manually",
+		"toasts": {
+			"resolved": "Conflict on line #{id} resolved"
 		}
 	}
 }

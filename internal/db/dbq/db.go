@@ -30,6 +30,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countLinesByImportStmt, err = db.PrepareContext(ctx, countLinesByImport); err != nil {
 		return nil, fmt.Errorf("error preparing query CountLinesByImport: %w", err)
 	}
+	if q.countLinesByRuleStmt, err = db.PrepareContext(ctx, countLinesByRule); err != nil {
+		return nil, fmt.Errorf("error preparing query CountLinesByRule: %w", err)
+	}
 	if q.countStatementLinesStmt, err = db.PrepareContext(ctx, countStatementLines); err != nil {
 		return nil, fmt.Errorf("error preparing query CountStatementLines: %w", err)
 	}
@@ -42,17 +45,32 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createImportBatchStmt, err = db.PrepareContext(ctx, createImportBatch); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateImportBatch: %w", err)
 	}
+	if q.createRuleStmt, err = db.PrepareContext(ctx, createRule); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateRule: %w", err)
+	}
 	if q.createSubcategoryStmt, err = db.PrepareContext(ctx, createSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSubcategory: %w", err)
 	}
 	if q.deleteAccountStmt, err = db.PrepareContext(ctx, deleteAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteAccount: %w", err)
 	}
+	if q.deleteConflictResolutionStmt, err = db.PrepareContext(ctx, deleteConflictResolution); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteConflictResolution: %w", err)
+	}
+	if q.deleteConflictResolutionsForRuleStmt, err = db.PrepareContext(ctx, deleteConflictResolutionsForRule); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteConflictResolutionsForRule: %w", err)
+	}
 	if q.deleteLinesByImportStmt, err = db.PrepareContext(ctx, deleteLinesByImport); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteLinesByImport: %w", err)
 	}
 	if q.deleteOldestActionsStmt, err = db.PrepareContext(ctx, deleteOldestActions); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteOldestActions: %w", err)
+	}
+	if q.deleteRuleStmt, err = db.PrepareContext(ctx, deleteRule); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRule: %w", err)
+	}
+	if q.deleteRuleAccountsForRuleStmt, err = db.PrepareContext(ctx, deleteRuleAccountsForRule); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRuleAccountsForRule: %w", err)
 	}
 	if q.deleteSubcategoryStmt, err = db.PrepareContext(ctx, deleteSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSubcategory: %w", err)
@@ -62,6 +80,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getActionStmt, err = db.PrepareContext(ctx, getAction); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAction: %w", err)
+	}
+	if q.getConflictResolutionStmt, err = db.PrepareContext(ctx, getConflictResolution); err != nil {
+		return nil, fmt.Errorf("error preparing query GetConflictResolution: %w", err)
 	}
 	if q.getImportBatchStmt, err = db.PrepareContext(ctx, getImportBatch); err != nil {
 		return nil, fmt.Errorf("error preparing query GetImportBatch: %w", err)
@@ -77,6 +98,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getLineForActionStmt, err = db.PrepareContext(ctx, getLineForAction); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLineForAction: %w", err)
+	}
+	if q.getLineWithRuleStmt, err = db.PrepareContext(ctx, getLineWithRule); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLineWithRule: %w", err)
+	}
+	if q.getRuleStmt, err = db.PrepareContext(ctx, getRule); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRule: %w", err)
 	}
 	if q.getSettingStmt, err = db.PrepareContext(ctx, getSetting); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSetting: %w", err)
@@ -96,6 +123,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.insertActionChangeStmt, err = db.PrepareContext(ctx, insertActionChange); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertActionChange: %w", err)
 	}
+	if q.insertRuleAccountStmt, err = db.PrepareContext(ctx, insertRuleAccount); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertRuleAccount: %w", err)
+	}
 	if q.insertStatementLineStmt, err = db.PrepareContext(ctx, insertStatementLine); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertStatementLine: %w", err)
 	}
@@ -105,17 +135,41 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listAccountsStmt, err = db.PrepareContext(ctx, listAccounts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAccounts: %w", err)
 	}
+	if q.listAccountsForRuleStmt, err = db.PrepareContext(ctx, listAccountsForRule); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAccountsForRule: %w", err)
+	}
 	if q.listActionChangesStmt, err = db.PrepareContext(ctx, listActionChanges); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActionChanges: %w", err)
 	}
 	if q.listActionsStmt, err = db.PrepareContext(ctx, listActions); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActions: %w", err)
 	}
+	if q.listCandidateLinesForRulesStmt, err = db.PrepareContext(ctx, listCandidateLinesForRules); err != nil {
+		return nil, fmt.Errorf("error preparing query ListCandidateLinesForRules: %w", err)
+	}
 	if q.listCategoriesStmt, err = db.PrepareContext(ctx, listCategories); err != nil {
 		return nil, fmt.Errorf("error preparing query ListCategories: %w", err)
 	}
+	if q.listConflictResolutionsStmt, err = db.PrepareContext(ctx, listConflictResolutions); err != nil {
+		return nil, fmt.Errorf("error preparing query ListConflictResolutions: %w", err)
+	}
+	if q.listConflictedLinesStmt, err = db.PrepareContext(ctx, listConflictedLines); err != nil {
+		return nil, fmt.Errorf("error preparing query ListConflictedLines: %w", err)
+	}
 	if q.listImportBatchesStmt, err = db.PrepareContext(ctx, listImportBatches); err != nil {
 		return nil, fmt.Errorf("error preparing query ListImportBatches: %w", err)
+	}
+	if q.listLinesByRuleStmt, err = db.PrepareContext(ctx, listLinesByRule); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLinesByRule: %w", err)
+	}
+	if q.listLinesForRulesStmt, err = db.PrepareContext(ctx, listLinesForRules); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLinesForRules: %w", err)
+	}
+	if q.listRuleAccountsStmt, err = db.PrepareContext(ctx, listRuleAccounts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRuleAccounts: %w", err)
+	}
+	if q.listRulesStmt, err = db.PrepareContext(ctx, listRules); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRules: %w", err)
 	}
 	if q.listSettingsStmt, err = db.PrepareContext(ctx, listSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSettings: %w", err)
@@ -150,14 +204,26 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setLineSubcategoryStmt, err = db.PrepareContext(ctx, setLineSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query SetLineSubcategory: %w", err)
 	}
+	if q.setRuleEnabledStmt, err = db.PrepareContext(ctx, setRuleEnabled); err != nil {
+		return nil, fmt.Errorf("error preparing query SetRuleEnabled: %w", err)
+	}
 	if q.statementLineTotalsStmt, err = db.PrepareContext(ctx, statementLineTotals); err != nil {
 		return nil, fmt.Errorf("error preparing query StatementLineTotals: %w", err)
 	}
 	if q.updateAccountStmt, err = db.PrepareContext(ctx, updateAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateAccount: %w", err)
 	}
+	if q.updateLineSourceStmt, err = db.PrepareContext(ctx, updateLineSource); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateLineSource: %w", err)
+	}
+	if q.updateRuleStmt, err = db.PrepareContext(ctx, updateRule); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateRule: %w", err)
+	}
 	if q.updateSubcategoryStmt, err = db.PrepareContext(ctx, updateSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSubcategory: %w", err)
+	}
+	if q.upsertConflictResolutionStmt, err = db.PrepareContext(ctx, upsertConflictResolution); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertConflictResolution: %w", err)
 	}
 	if q.upsertSettingStmt, err = db.PrepareContext(ctx, upsertSetting); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertSetting: %w", err)
@@ -175,6 +241,11 @@ func (q *Queries) Close() error {
 	if q.countLinesByImportStmt != nil {
 		if cerr := q.countLinesByImportStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countLinesByImportStmt: %w", cerr)
+		}
+	}
+	if q.countLinesByRuleStmt != nil {
+		if cerr := q.countLinesByRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countLinesByRuleStmt: %w", cerr)
 		}
 	}
 	if q.countStatementLinesStmt != nil {
@@ -197,6 +268,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createImportBatchStmt: %w", cerr)
 		}
 	}
+	if q.createRuleStmt != nil {
+		if cerr := q.createRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createRuleStmt: %w", cerr)
+		}
+	}
 	if q.createSubcategoryStmt != nil {
 		if cerr := q.createSubcategoryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createSubcategoryStmt: %w", cerr)
@@ -207,6 +283,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteAccountStmt: %w", cerr)
 		}
 	}
+	if q.deleteConflictResolutionStmt != nil {
+		if cerr := q.deleteConflictResolutionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteConflictResolutionStmt: %w", cerr)
+		}
+	}
+	if q.deleteConflictResolutionsForRuleStmt != nil {
+		if cerr := q.deleteConflictResolutionsForRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteConflictResolutionsForRuleStmt: %w", cerr)
+		}
+	}
 	if q.deleteLinesByImportStmt != nil {
 		if cerr := q.deleteLinesByImportStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteLinesByImportStmt: %w", cerr)
@@ -215,6 +301,16 @@ func (q *Queries) Close() error {
 	if q.deleteOldestActionsStmt != nil {
 		if cerr := q.deleteOldestActionsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteOldestActionsStmt: %w", cerr)
+		}
+	}
+	if q.deleteRuleStmt != nil {
+		if cerr := q.deleteRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRuleStmt: %w", cerr)
+		}
+	}
+	if q.deleteRuleAccountsForRuleStmt != nil {
+		if cerr := q.deleteRuleAccountsForRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRuleAccountsForRuleStmt: %w", cerr)
 		}
 	}
 	if q.deleteSubcategoryStmt != nil {
@@ -230,6 +326,11 @@ func (q *Queries) Close() error {
 	if q.getActionStmt != nil {
 		if cerr := q.getActionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getActionStmt: %w", cerr)
+		}
+	}
+	if q.getConflictResolutionStmt != nil {
+		if cerr := q.getConflictResolutionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getConflictResolutionStmt: %w", cerr)
 		}
 	}
 	if q.getImportBatchStmt != nil {
@@ -255,6 +356,16 @@ func (q *Queries) Close() error {
 	if q.getLineForActionStmt != nil {
 		if cerr := q.getLineForActionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getLineForActionStmt: %w", cerr)
+		}
+	}
+	if q.getLineWithRuleStmt != nil {
+		if cerr := q.getLineWithRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLineWithRuleStmt: %w", cerr)
+		}
+	}
+	if q.getRuleStmt != nil {
+		if cerr := q.getRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRuleStmt: %w", cerr)
 		}
 	}
 	if q.getSettingStmt != nil {
@@ -287,6 +398,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertActionChangeStmt: %w", cerr)
 		}
 	}
+	if q.insertRuleAccountStmt != nil {
+		if cerr := q.insertRuleAccountStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertRuleAccountStmt: %w", cerr)
+		}
+	}
 	if q.insertStatementLineStmt != nil {
 		if cerr := q.insertStatementLineStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertStatementLineStmt: %w", cerr)
@@ -302,6 +418,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listAccountsStmt: %w", cerr)
 		}
 	}
+	if q.listAccountsForRuleStmt != nil {
+		if cerr := q.listAccountsForRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAccountsForRuleStmt: %w", cerr)
+		}
+	}
 	if q.listActionChangesStmt != nil {
 		if cerr := q.listActionChangesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listActionChangesStmt: %w", cerr)
@@ -312,14 +433,49 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listActionsStmt: %w", cerr)
 		}
 	}
+	if q.listCandidateLinesForRulesStmt != nil {
+		if cerr := q.listCandidateLinesForRulesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listCandidateLinesForRulesStmt: %w", cerr)
+		}
+	}
 	if q.listCategoriesStmt != nil {
 		if cerr := q.listCategoriesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listCategoriesStmt: %w", cerr)
 		}
 	}
+	if q.listConflictResolutionsStmt != nil {
+		if cerr := q.listConflictResolutionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listConflictResolutionsStmt: %w", cerr)
+		}
+	}
+	if q.listConflictedLinesStmt != nil {
+		if cerr := q.listConflictedLinesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listConflictedLinesStmt: %w", cerr)
+		}
+	}
 	if q.listImportBatchesStmt != nil {
 		if cerr := q.listImportBatchesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listImportBatchesStmt: %w", cerr)
+		}
+	}
+	if q.listLinesByRuleStmt != nil {
+		if cerr := q.listLinesByRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLinesByRuleStmt: %w", cerr)
+		}
+	}
+	if q.listLinesForRulesStmt != nil {
+		if cerr := q.listLinesForRulesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLinesForRulesStmt: %w", cerr)
+		}
+	}
+	if q.listRuleAccountsStmt != nil {
+		if cerr := q.listRuleAccountsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRuleAccountsStmt: %w", cerr)
+		}
+	}
+	if q.listRulesStmt != nil {
+		if cerr := q.listRulesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRulesStmt: %w", cerr)
 		}
 	}
 	if q.listSettingsStmt != nil {
@@ -377,6 +533,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setLineSubcategoryStmt: %w", cerr)
 		}
 	}
+	if q.setRuleEnabledStmt != nil {
+		if cerr := q.setRuleEnabledStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setRuleEnabledStmt: %w", cerr)
+		}
+	}
 	if q.statementLineTotalsStmt != nil {
 		if cerr := q.statementLineTotalsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing statementLineTotalsStmt: %w", cerr)
@@ -387,9 +548,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateAccountStmt: %w", cerr)
 		}
 	}
+	if q.updateLineSourceStmt != nil {
+		if cerr := q.updateLineSourceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateLineSourceStmt: %w", cerr)
+		}
+	}
+	if q.updateRuleStmt != nil {
+		if cerr := q.updateRuleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateRuleStmt: %w", cerr)
+		}
+	}
 	if q.updateSubcategoryStmt != nil {
 		if cerr := q.updateSubcategoryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateSubcategoryStmt: %w", cerr)
+		}
+	}
+	if q.upsertConflictResolutionStmt != nil {
+		if cerr := q.upsertConflictResolutionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertConflictResolutionStmt: %w", cerr)
 		}
 	}
 	if q.upsertSettingStmt != nil {
@@ -434,105 +610,149 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                              DBTX
-	tx                              *sql.Tx
-	countAccountLinesStmt           *sql.Stmt
-	countLinesByImportStmt          *sql.Stmt
-	countStatementLinesStmt         *sql.Stmt
-	countSubcategoryLinesStmt       *sql.Stmt
-	createAccountStmt               *sql.Stmt
-	createImportBatchStmt           *sql.Stmt
-	createSubcategoryStmt           *sql.Stmt
-	deleteAccountStmt               *sql.Stmt
-	deleteLinesByImportStmt         *sql.Stmt
-	deleteOldestActionsStmt         *sql.Stmt
-	deleteSubcategoryStmt           *sql.Stmt
-	getAccountStmt                  *sql.Stmt
-	getActionStmt                   *sql.Stmt
-	getImportBatchStmt              *sql.Stmt
-	getLatestNonUndoneImportStmt    *sql.Stmt
-	getLatestUndoableActionStmt     *sql.Stmt
-	getLatestUndoneActionStmt       *sql.Stmt
-	getLineForActionStmt            *sql.Stmt
-	getSettingStmt                  *sql.Stmt
-	getStatementLineStmt            *sql.Stmt
-	getSubcategoryStmt              *sql.Stmt
-	importBatchExistsBySHAStmt      *sql.Stmt
-	insertActionStmt                *sql.Stmt
-	insertActionChangeStmt          *sql.Stmt
-	insertStatementLineStmt         *sql.Stmt
-	lineExistsStmt                  *sql.Stmt
-	listAccountsStmt                *sql.Stmt
-	listActionChangesStmt           *sql.Stmt
-	listActionsStmt                 *sql.Stmt
-	listCategoriesStmt              *sql.Stmt
-	listImportBatchesStmt           *sql.Stmt
-	listSettingsStmt                *sql.Stmt
-	listStatementLinesStmt          *sql.Stmt
-	listSubcategoriesStmt           *sql.Stmt
-	listSubcategoriesByCategoryStmt *sql.Stmt
-	markActionRedoneStmt            *sql.Stmt
-	markActionUndoneStmt            *sql.Stmt
-	markImportUndoneStmt            *sql.Stmt
-	reassignLinesToSubcategoryStmt  *sql.Stmt
-	resetLineToRulesStmt            *sql.Stmt
-	setLineSpreadStmt               *sql.Stmt
-	setLineSubcategoryStmt          *sql.Stmt
-	statementLineTotalsStmt         *sql.Stmt
-	updateAccountStmt               *sql.Stmt
-	updateSubcategoryStmt           *sql.Stmt
-	upsertSettingStmt               *sql.Stmt
+	db                                   DBTX
+	tx                                   *sql.Tx
+	countAccountLinesStmt                *sql.Stmt
+	countLinesByImportStmt               *sql.Stmt
+	countLinesByRuleStmt                 *sql.Stmt
+	countStatementLinesStmt              *sql.Stmt
+	countSubcategoryLinesStmt            *sql.Stmt
+	createAccountStmt                    *sql.Stmt
+	createImportBatchStmt                *sql.Stmt
+	createRuleStmt                       *sql.Stmt
+	createSubcategoryStmt                *sql.Stmt
+	deleteAccountStmt                    *sql.Stmt
+	deleteConflictResolutionStmt         *sql.Stmt
+	deleteConflictResolutionsForRuleStmt *sql.Stmt
+	deleteLinesByImportStmt              *sql.Stmt
+	deleteOldestActionsStmt              *sql.Stmt
+	deleteRuleStmt                       *sql.Stmt
+	deleteRuleAccountsForRuleStmt        *sql.Stmt
+	deleteSubcategoryStmt                *sql.Stmt
+	getAccountStmt                       *sql.Stmt
+	getActionStmt                        *sql.Stmt
+	getConflictResolutionStmt            *sql.Stmt
+	getImportBatchStmt                   *sql.Stmt
+	getLatestNonUndoneImportStmt         *sql.Stmt
+	getLatestUndoableActionStmt          *sql.Stmt
+	getLatestUndoneActionStmt            *sql.Stmt
+	getLineForActionStmt                 *sql.Stmt
+	getLineWithRuleStmt                  *sql.Stmt
+	getRuleStmt                          *sql.Stmt
+	getSettingStmt                       *sql.Stmt
+	getStatementLineStmt                 *sql.Stmt
+	getSubcategoryStmt                   *sql.Stmt
+	importBatchExistsBySHAStmt           *sql.Stmt
+	insertActionStmt                     *sql.Stmt
+	insertActionChangeStmt               *sql.Stmt
+	insertRuleAccountStmt                *sql.Stmt
+	insertStatementLineStmt              *sql.Stmt
+	lineExistsStmt                       *sql.Stmt
+	listAccountsStmt                     *sql.Stmt
+	listAccountsForRuleStmt              *sql.Stmt
+	listActionChangesStmt                *sql.Stmt
+	listActionsStmt                      *sql.Stmt
+	listCandidateLinesForRulesStmt       *sql.Stmt
+	listCategoriesStmt                   *sql.Stmt
+	listConflictResolutionsStmt          *sql.Stmt
+	listConflictedLinesStmt              *sql.Stmt
+	listImportBatchesStmt                *sql.Stmt
+	listLinesByRuleStmt                  *sql.Stmt
+	listLinesForRulesStmt                *sql.Stmt
+	listRuleAccountsStmt                 *sql.Stmt
+	listRulesStmt                        *sql.Stmt
+	listSettingsStmt                     *sql.Stmt
+	listStatementLinesStmt               *sql.Stmt
+	listSubcategoriesStmt                *sql.Stmt
+	listSubcategoriesByCategoryStmt      *sql.Stmt
+	markActionRedoneStmt                 *sql.Stmt
+	markActionUndoneStmt                 *sql.Stmt
+	markImportUndoneStmt                 *sql.Stmt
+	reassignLinesToSubcategoryStmt       *sql.Stmt
+	resetLineToRulesStmt                 *sql.Stmt
+	setLineSpreadStmt                    *sql.Stmt
+	setLineSubcategoryStmt               *sql.Stmt
+	setRuleEnabledStmt                   *sql.Stmt
+	statementLineTotalsStmt              *sql.Stmt
+	updateAccountStmt                    *sql.Stmt
+	updateLineSourceStmt                 *sql.Stmt
+	updateRuleStmt                       *sql.Stmt
+	updateSubcategoryStmt                *sql.Stmt
+	upsertConflictResolutionStmt         *sql.Stmt
+	upsertSettingStmt                    *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                              tx,
-		tx:                              tx,
-		countAccountLinesStmt:           q.countAccountLinesStmt,
-		countLinesByImportStmt:          q.countLinesByImportStmt,
-		countStatementLinesStmt:         q.countStatementLinesStmt,
-		countSubcategoryLinesStmt:       q.countSubcategoryLinesStmt,
-		createAccountStmt:               q.createAccountStmt,
-		createImportBatchStmt:           q.createImportBatchStmt,
-		createSubcategoryStmt:           q.createSubcategoryStmt,
-		deleteAccountStmt:               q.deleteAccountStmt,
-		deleteLinesByImportStmt:         q.deleteLinesByImportStmt,
-		deleteOldestActionsStmt:         q.deleteOldestActionsStmt,
-		deleteSubcategoryStmt:           q.deleteSubcategoryStmt,
-		getAccountStmt:                  q.getAccountStmt,
-		getActionStmt:                   q.getActionStmt,
-		getImportBatchStmt:              q.getImportBatchStmt,
-		getLatestNonUndoneImportStmt:    q.getLatestNonUndoneImportStmt,
-		getLatestUndoableActionStmt:     q.getLatestUndoableActionStmt,
-		getLatestUndoneActionStmt:       q.getLatestUndoneActionStmt,
-		getLineForActionStmt:            q.getLineForActionStmt,
-		getSettingStmt:                  q.getSettingStmt,
-		getStatementLineStmt:            q.getStatementLineStmt,
-		getSubcategoryStmt:              q.getSubcategoryStmt,
-		importBatchExistsBySHAStmt:      q.importBatchExistsBySHAStmt,
-		insertActionStmt:                q.insertActionStmt,
-		insertActionChangeStmt:          q.insertActionChangeStmt,
-		insertStatementLineStmt:         q.insertStatementLineStmt,
-		lineExistsStmt:                  q.lineExistsStmt,
-		listAccountsStmt:                q.listAccountsStmt,
-		listActionChangesStmt:           q.listActionChangesStmt,
-		listActionsStmt:                 q.listActionsStmt,
-		listCategoriesStmt:              q.listCategoriesStmt,
-		listImportBatchesStmt:           q.listImportBatchesStmt,
-		listSettingsStmt:                q.listSettingsStmt,
-		listStatementLinesStmt:          q.listStatementLinesStmt,
-		listSubcategoriesStmt:           q.listSubcategoriesStmt,
-		listSubcategoriesByCategoryStmt: q.listSubcategoriesByCategoryStmt,
-		markActionRedoneStmt:            q.markActionRedoneStmt,
-		markActionUndoneStmt:            q.markActionUndoneStmt,
-		markImportUndoneStmt:            q.markImportUndoneStmt,
-		reassignLinesToSubcategoryStmt:  q.reassignLinesToSubcategoryStmt,
-		resetLineToRulesStmt:            q.resetLineToRulesStmt,
-		setLineSpreadStmt:               q.setLineSpreadStmt,
-		setLineSubcategoryStmt:          q.setLineSubcategoryStmt,
-		statementLineTotalsStmt:         q.statementLineTotalsStmt,
-		updateAccountStmt:               q.updateAccountStmt,
-		updateSubcategoryStmt:           q.updateSubcategoryStmt,
-		upsertSettingStmt:               q.upsertSettingStmt,
+		db:                                   tx,
+		tx:                                   tx,
+		countAccountLinesStmt:                q.countAccountLinesStmt,
+		countLinesByImportStmt:               q.countLinesByImportStmt,
+		countLinesByRuleStmt:                 q.countLinesByRuleStmt,
+		countStatementLinesStmt:              q.countStatementLinesStmt,
+		countSubcategoryLinesStmt:            q.countSubcategoryLinesStmt,
+		createAccountStmt:                    q.createAccountStmt,
+		createImportBatchStmt:                q.createImportBatchStmt,
+		createRuleStmt:                       q.createRuleStmt,
+		createSubcategoryStmt:                q.createSubcategoryStmt,
+		deleteAccountStmt:                    q.deleteAccountStmt,
+		deleteConflictResolutionStmt:         q.deleteConflictResolutionStmt,
+		deleteConflictResolutionsForRuleStmt: q.deleteConflictResolutionsForRuleStmt,
+		deleteLinesByImportStmt:              q.deleteLinesByImportStmt,
+		deleteOldestActionsStmt:              q.deleteOldestActionsStmt,
+		deleteRuleStmt:                       q.deleteRuleStmt,
+		deleteRuleAccountsForRuleStmt:        q.deleteRuleAccountsForRuleStmt,
+		deleteSubcategoryStmt:                q.deleteSubcategoryStmt,
+		getAccountStmt:                       q.getAccountStmt,
+		getActionStmt:                        q.getActionStmt,
+		getConflictResolutionStmt:            q.getConflictResolutionStmt,
+		getImportBatchStmt:                   q.getImportBatchStmt,
+		getLatestNonUndoneImportStmt:         q.getLatestNonUndoneImportStmt,
+		getLatestUndoableActionStmt:          q.getLatestUndoableActionStmt,
+		getLatestUndoneActionStmt:            q.getLatestUndoneActionStmt,
+		getLineForActionStmt:                 q.getLineForActionStmt,
+		getLineWithRuleStmt:                  q.getLineWithRuleStmt,
+		getRuleStmt:                          q.getRuleStmt,
+		getSettingStmt:                       q.getSettingStmt,
+		getStatementLineStmt:                 q.getStatementLineStmt,
+		getSubcategoryStmt:                   q.getSubcategoryStmt,
+		importBatchExistsBySHAStmt:           q.importBatchExistsBySHAStmt,
+		insertActionStmt:                     q.insertActionStmt,
+		insertActionChangeStmt:               q.insertActionChangeStmt,
+		insertRuleAccountStmt:                q.insertRuleAccountStmt,
+		insertStatementLineStmt:              q.insertStatementLineStmt,
+		lineExistsStmt:                       q.lineExistsStmt,
+		listAccountsStmt:                     q.listAccountsStmt,
+		listAccountsForRuleStmt:              q.listAccountsForRuleStmt,
+		listActionChangesStmt:                q.listActionChangesStmt,
+		listActionsStmt:                      q.listActionsStmt,
+		listCandidateLinesForRulesStmt:       q.listCandidateLinesForRulesStmt,
+		listCategoriesStmt:                   q.listCategoriesStmt,
+		listConflictResolutionsStmt:          q.listConflictResolutionsStmt,
+		listConflictedLinesStmt:              q.listConflictedLinesStmt,
+		listImportBatchesStmt:                q.listImportBatchesStmt,
+		listLinesByRuleStmt:                  q.listLinesByRuleStmt,
+		listLinesForRulesStmt:                q.listLinesForRulesStmt,
+		listRuleAccountsStmt:                 q.listRuleAccountsStmt,
+		listRulesStmt:                        q.listRulesStmt,
+		listSettingsStmt:                     q.listSettingsStmt,
+		listStatementLinesStmt:               q.listStatementLinesStmt,
+		listSubcategoriesStmt:                q.listSubcategoriesStmt,
+		listSubcategoriesByCategoryStmt:      q.listSubcategoriesByCategoryStmt,
+		markActionRedoneStmt:                 q.markActionRedoneStmt,
+		markActionUndoneStmt:                 q.markActionUndoneStmt,
+		markImportUndoneStmt:                 q.markImportUndoneStmt,
+		reassignLinesToSubcategoryStmt:       q.reassignLinesToSubcategoryStmt,
+		resetLineToRulesStmt:                 q.resetLineToRulesStmt,
+		setLineSpreadStmt:                    q.setLineSpreadStmt,
+		setLineSubcategoryStmt:               q.setLineSubcategoryStmt,
+		setRuleEnabledStmt:                   q.setRuleEnabledStmt,
+		statementLineTotalsStmt:              q.statementLineTotalsStmt,
+		updateAccountStmt:                    q.updateAccountStmt,
+		updateLineSourceStmt:                 q.updateLineSourceStmt,
+		updateRuleStmt:                       q.updateRuleStmt,
+		updateSubcategoryStmt:                q.updateSubcategoryStmt,
+		upsertConflictResolutionStmt:         q.upsertConflictResolutionStmt,
+		upsertSettingStmt:                    q.upsertSettingStmt,
 	}
 }

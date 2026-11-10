@@ -8,6 +8,7 @@ export type CatzAction =
 	| { type: 'openPicker' }
 	| { type: 'spread' }
 	| { type: 'reset' }
+	| { type: 'createRule' }
 	| { type: 'undo' }
 	| { type: 'redo' }
 	| { type: 'focusFilter' }
@@ -25,7 +26,7 @@ export const RESERVED_KEYS: ReadonlySet<string> = new Set([
 	' ', // space opens the picker
 	'backspace', // reset to rules
 	's', // spread dialog
-	'r', // create rule from line (M3 slot, disabled in M2)
+	'r', // create rule from line (M3, CATZ-7)
 	'/', // focus filter
 	'?', // help overlay
 	'z', // undo/redo (with ctrl)
@@ -83,6 +84,8 @@ export function mapKeyToAction(input: KeyMappingInput): CatzAction {
 			return { type: 'spread' };
 		case 'backspace':
 			return { type: 'reset' };
+		case 'r':
+			return { type: 'createRule' };
 		case '/':
 			return { type: 'focusFilter' };
 		case '?':

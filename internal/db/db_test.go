@@ -84,8 +84,8 @@ func TestMigrate(t *testing.T) {
 		t.Errorf("expected 4 categories, got %d", count)
 	}
 
-	// Verify M1 tables exist (migration 00002) and M2 action tables (migration 00004)
-	for _, table := range []string{"account", "subcategory", "import_batch", "statement_line", "action_log", "action_change"} {
+	// Verify M1 tables exist (migration 00002), M2 action tables (00004) and M3 rule tables (00005)
+	for _, table := range []string{"account", "subcategory", "import_batch", "statement_line", "action_log", "action_change", "rule", "rule_account", "conflict_resolution"} {
 		var name string
 		if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Errorf("expected table %q to exist: %v", table, err)

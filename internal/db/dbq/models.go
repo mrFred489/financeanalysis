@@ -40,6 +40,12 @@ type Category struct {
 	Color string `json:"color"`
 }
 
+type ConflictResolution struct {
+	LineID    int64  `json:"line_id"`
+	RuleID    int64  `json:"rule_id"`
+	CreatedAt string `json:"created_at"`
+}
+
 type ImportBatch struct {
 	ID             int64          `json:"id"`
 	AccountID      int64          `json:"account_id"`
@@ -49,6 +55,22 @@ type ImportBatch struct {
 	LineCount      int64          `json:"line_count"`
 	DuplicateCount int64          `json:"duplicate_count"`
 	UndoneAt       sql.NullString `json:"undone_at"`
+}
+
+type Rule struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Pattern       string `json:"pattern"`
+	Direction     string `json:"direction"`
+	SubcategoryID int64  `json:"subcategory_id"`
+	Enabled       int64  `json:"enabled"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+type RuleAccount struct {
+	RuleID    int64 `json:"rule_id"`
+	AccountID int64 `json:"account_id"`
 }
 
 type Setting struct {

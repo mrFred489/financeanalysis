@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 // Setup goes through the real API (create DB, import fixture CSV, hotkeys);
 // the categorization flow itself is driven through the UI with the keyboard.
 
-const BASE = 'http://127.0.0.1:8080';
+const BASE = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8080';
 const CSV_PATH = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
 	'../../testdata/fixtures/csv/normal.csv'
