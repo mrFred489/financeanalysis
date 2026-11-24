@@ -833,3 +833,19 @@ func TestEncodeDecodeRejectionID(t *testing.T) {
 		t.Fatalf("round trip failed: %d,%d -> %d -> %d,%d", out, in, id, gotOut, gotIn)
 	}
 }
+
+func TestRejectionTouchesLines(t *testing.T) {
+	id := EncodeRejectionID(5, 9)
+	if !RejectionTouchesLines(id, map[int64]bool{5: true}) {
+		t.Errorf("expected out side 5 to count as touching")
+	}
+	if !RejectionTouchesLines(id, map[int64]bool{9: true}) {
+		t.Errorf("expected in side 9 to count as touching")
+	}
+	if RejectionTouchesLines(id, map[int64]bool{7: true}) {
+		t.Errorf("unrelated line 7 must not count as touching")
+	}
+	if RejectionTouchesLines(id, map[int64]bool{}) {
+		t.Errorf("empty set must not count as touching")
+	}
+}

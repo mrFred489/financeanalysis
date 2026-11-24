@@ -12,10 +12,12 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 
+	"github.com/mrFred489/financeanalysis/internal/actions"
 	"github.com/mrFred489/financeanalysis/internal/csvparse"
 	"github.com/mrFred489/financeanalysis/internal/db"
 	"github.com/mrFred489/financeanalysis/internal/db/dbq"
@@ -421,8 +423,9 @@ func nullInt64(v *int64) sql.NullInt64 {
 // UndoLatest deletes the lines of the latest non-undone import batch (globally)
 // and marks it undone (IMP-13). A backup is taken first. Transfer links of the
 // deleted lines are removed by ON DELETE CASCADE; rejection rows referencing the
-// deleted lines are removed explicitly; the surviving counterpart lines go back
-// to rule evaluation.
+// deleted lines are removed explicitly; action-log entries referencing the
+// deleted rows are removed too (M4-fix1); the surviving counterpart lines go
+// back to rule evaluation.
 func UndoLatest(ctx context.Context, d *sql.DB, backupDir string) (int64, error) {
 	q := dbq.New(d)
 	batch, err := q.GetLatestNonUndoneImport(ctx)
@@ -466,6 +469,14 @@ func UndoLatest(ctx context.Context, d *sql.DB, backupDir string) (int64, error)
 		} else {
 			counterpartIDs = append(counterpartIDs, l.OutLineID)
 		}
+	}
+
+	// M4-fix1 (IMP-13, review finding 1): delete the action-log entries that
+	// reference rows this undo deletes, so a later action undo/redo cannot
+	// resurrect a deleted line or fail on a dangling transfer link/rejection.
+	// Runs before the lines are deleted, in the same transaction.
+	if err := deleteActionChangesForBatch(ctx, qt, lineIDs, links, inBatch); err != nil {
+		return 0, err
 	}
 
 	// Rejection rows referencing the deleted lines are cleaned up explicitly
@@ -513,4 +524,67 @@ func UndoLatest(ctx context.Context, d *sql.DB, backupDir string) (int64, error)
 		return 0, err
 	}
 	return batch.ID, nil
+}
+
+// deleteActionChangesForBatch removes the action_change rows that reference
+// rows deleted by the import undo (M4-fix1, IMP-13, plan
+// docs/plans/M4-fix1-import-undo-action-log.md): statement_line and
+// conflict_resolution snapshots of the batch's lines, transfer_link snapshots
+// of links touching those lines, and transfer_rejection pairs with either side
+// in the batch. Only fully orphaned action_log rows (zero remaining changes)
+// are pruned, so actions that also reference surviving rows stay undoable for
+// the surviving part. Must run inside UndoLatest's transaction before the
+// lines are deleted; line/link ids are already fetched there.
+func deleteActionChangesForBatch(ctx context.Context, qt *dbq.Queries, lineIDs []int64, links []*dbq.TransferLink, inBatch map[int64]bool) error {
+	idsToJSON := func(ids []int64) (string, error) {
+		if ids == nil {
+			ids = []int64{}
+		}
+		b, err := json.Marshal(ids)
+		if err != nil {
+			return "", fmt.Errorf("marshal ids: %w", err)
+		}
+		return string(b), nil
+	}
+
+	lineIDsJSON, err := idsToJSON(lineIDs)
+	if err != nil {
+		return err
+	}
+	if err := qt.DeleteActionChangesForLines(ctx, lineIDsJSON); err != nil {
+		return fmt.Errorf("delete action changes for lines: %w", err)
+	}
+
+	linkIDs := make([]int64, 0, len(links))
+	for _, l := range links {
+		linkIDs = append(linkIDs, l.ID)
+	}
+	linkIDsJSON, err := idsToJSON(linkIDs)
+	if err != nil {
+		return err
+	}
+	if err := qt.DeleteActionChangesForLinks(ctx, linkIDsJSON); err != nil {
+		return fmt.Errorf("delete action changes for links: %w", err)
+	}
+
+	// Rejection pairs use the synthetic entity_id (out*10^8 + in); decode it in
+	// Go via the actions package so the factor stays single-sourced (D3).
+	rejections, err := qt.ListActionChangesByEntity(ctx, actions.EntityTransferRejection)
+	if err != nil {
+		return fmt.Errorf("list transfer_rejection action changes: %w", err)
+	}
+	for _, c := range rejections {
+		if actions.RejectionTouchesLines(c.EntityID, inBatch) {
+			if err := qt.DeleteActionChange(ctx, dbq.DeleteActionChangeParams{
+				ActionID: c.ActionID, Entity: c.Entity, EntityID: c.EntityID,
+			}); err != nil {
+				return fmt.Errorf("delete transfer_rejection action change: %w", err)
+			}
+		}
+	}
+
+	if err := qt.DeleteOrphanActions(ctx); err != nil {
+		return fmt.Errorf("prune orphan actions: %w", err)
+	}
+	return nil
 }

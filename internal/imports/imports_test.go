@@ -3,10 +3,13 @@ package imports
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/mrFred489/financeanalysis/internal/actions"
 	"github.com/mrFred489/financeanalysis/internal/db"
 	"github.com/mrFred489/financeanalysis/internal/db/dbq"
 )
@@ -327,5 +330,74 @@ func TestPreviewEmptyFile(t *testing.T) {
 	ctx, q, secret, _, accountID := setup(t)
 	if _, err := Preview(ctx, q, secret, accountID, "empty.csv", fixture(t, "empty.csv")); err == nil {
 		t.Fatalf("expected error for empty file")
+	}
+}
+
+// TestUndoLatestCleansActionLog verifies M4-fix1 (IMP-13, review finding 1):
+// UndoLatest also deletes the action_change rows referencing the batch's lines
+// and prunes the action_log row when no changes remain, so a later
+// actions.Undo can neither resurrect the deleted line nor consume an undo step.
+func TestUndoLatestCleansActionLog(t *testing.T) {
+	ctx, q, secret, backupDir, accountID := setup(t)
+	d, _ := db.GetDB()
+
+	content := fixture(t, "normal.csv")
+	prev, err := Preview(ctx, q, secret, accountID, "normal.csv", content)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	res, err := Commit(ctx, d, secret, backupDir, accountID, "normal.csv", content, prev.PreviewToken)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	lineIDs, err := q.ListLineIdsByImport(ctx, sql.NullInt64{Int64: res.ImportID, Valid: true})
+	if err != nil {
+		t.Fatalf("ListLineIdsByImport: %v", err)
+	}
+	if len(lineIDs) != 3 {
+		t.Fatalf("expected 3 lines in the batch, got %d", len(lineIDs))
+	}
+	lineID := lineIDs[0]
+
+	// Record an action referencing the batch's line, like the categorize handler does.
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	before, err := dbq.New(tx).GetLineForAction(ctx, lineID)
+	if err != nil {
+		t.Fatalf("GetLineForAction: %v", err)
+	}
+	actionID, err := actions.Record(ctx, tx, "categorize", fmt.Sprintf("Categorized line #%d", lineID), []actions.Change{
+		{Entity: actions.EntityStatementLine, EntityID: lineID, Before: *before, After: *before},
+	})
+	if err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if _, err := UndoLatest(ctx, d, backupDir); err != nil {
+		t.Fatalf("UndoLatest: %v", err)
+	}
+
+	var changes int64
+	if err := d.QueryRowContext(ctx, "SELECT COUNT(*) FROM action_change WHERE action_id = ?", actionID).Scan(&changes); err != nil {
+		t.Fatalf("count action_change: %v", err)
+	}
+	if changes != 0 {
+		t.Errorf("expected the change row referencing the deleted line to be cleaned, got %d rows", changes)
+	}
+	var logs int64
+	if err := d.QueryRowContext(ctx, "SELECT COUNT(*) FROM action_log WHERE id = ?", actionID).Scan(&logs); err != nil {
+		t.Fatalf("count action_log: %v", err)
+	}
+	if logs != 0 {
+		t.Errorf("expected the orphaned action_log row to be pruned, got %d rows", logs)
+	}
+	if _, err := actions.Undo(ctx, d); !errors.Is(err, actions.ErrNothingToUndo) {
+		t.Errorf("expected ErrNothingToUndo after the cleanup, got %v", err)
 	}
 }

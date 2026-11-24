@@ -60,6 +60,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteAccountStmt, err = db.PrepareContext(ctx, deleteAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteAccount: %w", err)
 	}
+	if q.deleteActionChangeStmt, err = db.PrepareContext(ctx, deleteActionChange); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteActionChange: %w", err)
+	}
+	if q.deleteActionChangesForLinesStmt, err = db.PrepareContext(ctx, deleteActionChangesForLines); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteActionChangesForLines: %w", err)
+	}
+	if q.deleteActionChangesForLinksStmt, err = db.PrepareContext(ctx, deleteActionChangesForLinks); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteActionChangesForLinks: %w", err)
+	}
 	if q.deleteConflictResolutionStmt, err = db.PrepareContext(ctx, deleteConflictResolution); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteConflictResolution: %w", err)
 	}
@@ -71,6 +80,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteOldestActionsStmt, err = db.PrepareContext(ctx, deleteOldestActions); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteOldestActions: %w", err)
+	}
+	if q.deleteOrphanActionsStmt, err = db.PrepareContext(ctx, deleteOrphanActions); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrphanActions: %w", err)
 	}
 	if q.deleteRejectionsByImportStmt, err = db.PrepareContext(ctx, deleteRejectionsByImport); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRejectionsByImport: %w", err)
@@ -167,6 +179,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listActionChangesStmt, err = db.PrepareContext(ctx, listActionChanges); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActionChanges: %w", err)
+	}
+	if q.listActionChangesByEntityStmt, err = db.PrepareContext(ctx, listActionChangesByEntity); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActionChangesByEntity: %w", err)
 	}
 	if q.listActionsStmt, err = db.PrepareContext(ctx, listActions); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActions: %w", err)
@@ -341,6 +356,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteAccountStmt: %w", cerr)
 		}
 	}
+	if q.deleteActionChangeStmt != nil {
+		if cerr := q.deleteActionChangeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteActionChangeStmt: %w", cerr)
+		}
+	}
+	if q.deleteActionChangesForLinesStmt != nil {
+		if cerr := q.deleteActionChangesForLinesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteActionChangesForLinesStmt: %w", cerr)
+		}
+	}
+	if q.deleteActionChangesForLinksStmt != nil {
+		if cerr := q.deleteActionChangesForLinksStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteActionChangesForLinksStmt: %w", cerr)
+		}
+	}
 	if q.deleteConflictResolutionStmt != nil {
 		if cerr := q.deleteConflictResolutionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteConflictResolutionStmt: %w", cerr)
@@ -359,6 +389,11 @@ func (q *Queries) Close() error {
 	if q.deleteOldestActionsStmt != nil {
 		if cerr := q.deleteOldestActionsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteOldestActionsStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrphanActionsStmt != nil {
+		if cerr := q.deleteOrphanActionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrphanActionsStmt: %w", cerr)
 		}
 	}
 	if q.deleteRejectionsByImportStmt != nil {
@@ -519,6 +554,11 @@ func (q *Queries) Close() error {
 	if q.listActionChangesStmt != nil {
 		if cerr := q.listActionChangesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listActionChangesStmt: %w", cerr)
+		}
+	}
+	if q.listActionChangesByEntityStmt != nil {
+		if cerr := q.listActionChangesByEntityStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listActionChangesByEntityStmt: %w", cerr)
 		}
 	}
 	if q.listActionsStmt != nil {
@@ -752,10 +792,14 @@ type Queries struct {
 	createSubcategoryStmt                *sql.Stmt
 	createTransferLinkStmt               *sql.Stmt
 	deleteAccountStmt                    *sql.Stmt
+	deleteActionChangeStmt               *sql.Stmt
+	deleteActionChangesForLinesStmt      *sql.Stmt
+	deleteActionChangesForLinksStmt      *sql.Stmt
 	deleteConflictResolutionStmt         *sql.Stmt
 	deleteConflictResolutionsForRuleStmt *sql.Stmt
 	deleteLinesByImportStmt              *sql.Stmt
 	deleteOldestActionsStmt              *sql.Stmt
+	deleteOrphanActionsStmt              *sql.Stmt
 	deleteRejectionsByImportStmt         *sql.Stmt
 	deleteRuleStmt                       *sql.Stmt
 	deleteRuleAccountsForRuleStmt        *sql.Stmt
@@ -788,6 +832,7 @@ type Queries struct {
 	listAccountsStmt                     *sql.Stmt
 	listAccountsForRuleStmt              *sql.Stmt
 	listActionChangesStmt                *sql.Stmt
+	listActionChangesByEntityStmt        *sql.Stmt
 	listActionsStmt                      *sql.Stmt
 	listCandidateLinesForRulesStmt       *sql.Stmt
 	listCategoriesStmt                   *sql.Stmt
@@ -842,10 +887,14 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createSubcategoryStmt:                q.createSubcategoryStmt,
 		createTransferLinkStmt:               q.createTransferLinkStmt,
 		deleteAccountStmt:                    q.deleteAccountStmt,
+		deleteActionChangeStmt:               q.deleteActionChangeStmt,
+		deleteActionChangesForLinesStmt:      q.deleteActionChangesForLinesStmt,
+		deleteActionChangesForLinksStmt:      q.deleteActionChangesForLinksStmt,
 		deleteConflictResolutionStmt:         q.deleteConflictResolutionStmt,
 		deleteConflictResolutionsForRuleStmt: q.deleteConflictResolutionsForRuleStmt,
 		deleteLinesByImportStmt:              q.deleteLinesByImportStmt,
 		deleteOldestActionsStmt:              q.deleteOldestActionsStmt,
+		deleteOrphanActionsStmt:              q.deleteOrphanActionsStmt,
 		deleteRejectionsByImportStmt:         q.deleteRejectionsByImportStmt,
 		deleteRuleStmt:                       q.deleteRuleStmt,
 		deleteRuleAccountsForRuleStmt:        q.deleteRuleAccountsForRuleStmt,
@@ -878,6 +927,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listAccountsStmt:                     q.listAccountsStmt,
 		listAccountsForRuleStmt:              q.listAccountsForRuleStmt,
 		listActionChangesStmt:                q.listActionChangesStmt,
+		listActionChangesByEntityStmt:        q.listActionChangesByEntityStmt,
 		listActionsStmt:                      q.listActionsStmt,
 		listCandidateLinesForRulesStmt:       q.listCandidateLinesForRulesStmt,
 		listCategoriesStmt:                   q.listCategoriesStmt,

@@ -54,6 +54,15 @@ func DecodeRejectionID(entityID int64) (outLineID, inLineID int64) {
 	return entityID / rejectionIDFactor, entityID % rejectionIDFactor
 }
 
+// RejectionTouchesLines reports whether a synthetic transfer_rejection entity
+// id encodes a pair with at least one side in lineIDs (M4-fix1: used by
+// imports.UndoLatest to clean up action_change rows of rejection pairs that
+// reference lines deleted with the undone import batch).
+func RejectionTouchesLines(entityID int64, lineIDs map[int64]bool) bool {
+	outLineID, inLineID := DecodeRejectionID(entityID)
+	return lineIDs[outLineID] || lineIDs[inLineID]
+}
+
 // entityColumns whitelists the restorable columns per entity. Snapshots restore
 // only known columns; migrations must not drop/rename these columns
 // (docs/migrations.md section 8). The entity name itself only ever comes from
