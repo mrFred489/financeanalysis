@@ -194,8 +194,8 @@ func validateDatabaseFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read schema version: %w", err)
 	}
-	if version > db.CurrentSchemaVersion {
-		return fmt.Errorf("%w: file is version %d, this app supports up to %d", db.ErrSchemaTooNew, version, db.CurrentSchemaVersion)
+	if version > db.MaxKnownVersion() {
+		return fmt.Errorf("%w: file is version %d, this app supports up to %d", db.ErrSchemaTooNew, version, db.MaxKnownVersion())
 	}
 	return nil
 }

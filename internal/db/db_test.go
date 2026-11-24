@@ -106,8 +106,17 @@ func TestMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if version != CurrentSchemaVersion {
-		t.Errorf("expected schema version %d, got %d", CurrentSchemaVersion, version)
+	if version != MaxKnownVersion() {
+		t.Errorf("expected schema version %d, got %d", MaxKnownVersion(), version)
+	}
+
+	// A fresh database is not backed up before migrating
+	backupFiles, err := filepath.Glob(filepath.Join(backupDir, "*.sqlite"))
+	if err != nil {
+		t.Fatalf("failed to list backups: %v", err)
+	}
+	if len(backupFiles) != 0 {
+		t.Errorf("expected no pre-migrate backup for a fresh database, got %v", backupFiles)
 	}
 
 	// Verify integrity
@@ -136,12 +145,12 @@ func TestMigrateFromV1(t *testing.T) {
 	}
 	defer db.Close()
 
-	migrations, err := loadMigrations()
-	if err != nil {
-		t.Fatalf("failed to load migrations: %v", err)
-	}
 	// Apply only the first migration, as the old binary would have.
-	if err := applyMigration(context.Background(), db, migrations[0]); err != nil {
+	p, err := providerFor(db)
+	if err != nil {
+		t.Fatalf("failed to create provider: %v", err)
+	}
+	if _, err := p.UpTo(context.Background(), 1); err != nil {
 		t.Fatalf("failed to apply migration 1: %v", err)
 	}
 
@@ -161,8 +170,8 @@ func TestMigrateFromV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get schema version: %v", err)
 	}
-	if version != CurrentSchemaVersion {
-		t.Errorf("expected schema version %d, got %d", CurrentSchemaVersion, version)
+	if version != MaxKnownVersion() {
+		t.Errorf("expected schema version %d, got %d", MaxKnownVersion(), version)
 	}
 
 	var subCount int
@@ -199,17 +208,12 @@ func TestMigrateFromV2PreservesLines(t *testing.T) {
 	}
 	defer db.Close()
 
-	migrations, err := loadMigrations()
+	p, err := providerFor(db)
 	if err != nil {
-		t.Fatalf("failed to load migrations: %v", err)
+		t.Fatalf("failed to create provider: %v", err)
 	}
-	for _, m := range migrations {
-		if m.version > 2 {
-			break
-		}
-		if err := applyMigration(context.Background(), db, m); err != nil {
-			t.Fatalf("failed to apply migration %d: %v", m.version, err)
-		}
+	if _, err := p.UpTo(context.Background(), 2); err != nil {
+		t.Fatalf("failed to apply migrations up to v2: %v", err)
 	}
 
 	if _, err := db.Exec(`INSERT INTO account (name, account_number) VALUES ('Main', '9999 0000000001')`); err != nil {
@@ -228,8 +232,8 @@ func TestMigrateFromV2PreservesLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema version: %v", err)
 	}
-	if version != CurrentSchemaVersion {
-		t.Errorf("expected schema version %d, got %d", CurrentSchemaVersion, version)
+	if version != MaxKnownVersion() {
+		t.Errorf("expected schema version %d, got %d", MaxKnownVersion(), version)
 	}
 
 	var balance sql.NullInt64
@@ -347,6 +351,65 @@ func TestMigrateUpToDate(t *testing.T) {
 	}
 	if len(backupFiles) != backupCount {
 		t.Errorf("expected %d backups, got %d", backupCount, len(backupFiles))
+	}
+}
+
+func TestMigrateDownUpRoundTrip(t *testing.T) {
+	// Dev safety: down migrations must round-trip (production rollback is backups).
+	tmpDir, err := os.MkdirTemp("", "financeanalysis-roundtrip-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.sqlite")
+	backupDir := filepath.Join(tmpDir, "backups")
+
+	if err := InitDB(context.Background(), dbPath); err != nil {
+		t.Fatalf("failed to init DB: %v", err)
+	}
+	db, err := GetDB()
+	if err != nil {
+		t.Fatalf("failed to get DB: %v", err)
+	}
+	defer db.Close()
+
+	if err := Migrate(context.Background(), db, backupDir); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	if err := downTo(context.Background(), db, 0); err != nil {
+		t.Fatalf("failed to down to 0: %v", err)
+	}
+	version, err := SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("failed to get schema version: %v", err)
+	}
+	if version != 0 {
+		t.Errorf("expected schema version 0 after downTo(0), got %d", version)
+	}
+
+	// Migrating again from scratch must work, including the v2 seed
+	if err := Migrate(context.Background(), db, backupDir); err != nil {
+		t.Fatalf("failed to re-migrate: %v", err)
+	}
+	version, err = SchemaVersion(context.Background(), db)
+	if err != nil {
+		t.Fatalf("failed to get schema version: %v", err)
+	}
+	if version != MaxKnownVersion() {
+		t.Errorf("expected schema version %d, got %d", MaxKnownVersion(), version)
+	}
+
+	var subCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM subcategory").Scan(&subCount); err != nil {
+		t.Fatalf("failed to count subcategories: %v", err)
+	}
+	if subCount != 12 {
+		t.Errorf("expected 12 seeded subcategories after re-migrate, got %d", subCount)
+	}
+	if err := integrityCheck(context.Background(), db); err != nil {
+		t.Fatalf("integrity check failed: %v", err)
 	}
 }
 

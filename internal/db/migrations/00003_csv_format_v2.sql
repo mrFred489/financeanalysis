@@ -3,7 +3,7 @@
 -- CSV format v2 (PRD section 7.2, plan docs/plans/csv-format-v2.md): the bank's
 -- real export is a fixed 16-column file with no running balance and three dates.
 -- Rebuild statement_line (SQLite table rebuild, docs/migrations.md section 4;
--- the custom migrator runs this inside a transaction and no table references
+-- goose wraps each migration in a transaction by default and no table references
 -- statement_line yet, so foreign keys can stay enabled):
 --   - balance_minor becomes nullable (column 5 is empty in this export)
 --   - new nullable columns: transaction_date (col 7), value_date (col 9),

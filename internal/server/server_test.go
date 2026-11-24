@@ -165,8 +165,8 @@ func TestStatusMissingThenReady(t *testing.T) {
 	if body["accountsConfigured"] != true {
 		t.Errorf("expected accountsConfigured=true, got %v", body["accountsConfigured"])
 	}
-	if body["schemaVersion"] != float64(db.CurrentSchemaVersion) {
-		t.Errorf("expected schemaVersion=%d, got %v", db.CurrentSchemaVersion, body["schemaVersion"])
+	if body["schemaVersion"] != float64(db.MaxKnownVersion()) {
+		t.Errorf("expected schemaVersion=%d, got %v", db.MaxKnownVersion(), body["schemaVersion"])
 	}
 
 	// Second create must conflict

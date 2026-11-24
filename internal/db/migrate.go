@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/database"
+	"github.com/pressly/goose/v3/database/dialect"
 
 	"github.com/mrFred489/financeanalysis/internal/colorx"
 )
@@ -23,27 +29,85 @@ var migrationsFS embed.FS
 // ErrSchemaTooNew is returned when the database schema version is newer than what the binary supports.
 var ErrSchemaTooNew = fmt.Errorf("database schema version is newer than the binary supports")
 
-// CurrentSchemaVersion is the current schema version supported by this binary.
-const CurrentSchemaVersion = 5
-
 // maxBackups is the number of backups kept in the backups directory.
 const maxBackups = 20
 
-type migration struct {
-	version int64
-	name    string
-	up      string
-}
-
 var migrationFilePattern = regexp.MustCompile(`^(\d{5})_[a-z0-9_]+\.sql$`)
 
-// loadMigrations reads the embedded migration files and returns their Up sections, sorted by version.
-func loadMigrations() ([]migration, error) {
-	entries, err := migrationsFS.ReadDir("migrations")
+// providerFor returns a goose provider that applies the embedded migrations to db.
+//
+// The *sql.DB is opened with modernc.org/sqlite (driver "sqlite", pure Go), so
+// CGO stays disabled; the provider only needs the SQL dialect. We register a
+// custom store (DialectCustom) because goose's built-in sqlite3 querier has no
+// TableExists, which makes the provider try to re-create goose_db_version on
+// databases that already have it — e.g. every database written by the previous
+// hand-rolled runner. sqliteQuerier adds TableExists, so existing databases and
+// backups are recognized and used unchanged.
+func providerFor(db *sql.DB) (*goose.Provider, error) {
+	sub, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read migrations: %w", err)
 	}
-	var migrations []migration
+	store, err := database.NewStoreFromQuerier(goose.DefaultTablename, sqliteQuerier{})
+	if err != nil {
+		return nil, err
+	}
+	return goose.NewProvider(goose.DialectCustom, db, sub,
+		goose.WithStore(store),
+		goose.WithSlog(slog.Default()),
+	)
+}
+
+// sqliteQuerier implements goose's database/dialect.Querier for SQLite, with a
+// working TableExists. The statements match goose's built-in sqlite3 querier.
+type sqliteQuerier struct{}
+
+var _ dialect.Querier = sqliteQuerier{}
+
+func (sqliteQuerier) CreateTable(tableName string) string {
+	return fmt.Sprintf(`CREATE TABLE %s (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version_id INTEGER NOT NULL,
+		is_applied INTEGER NOT NULL,
+		tstamp TIMESTAMP DEFAULT (datetime('now'))
+	)`, tableName)
+}
+
+func (sqliteQuerier) InsertVersion(tableName string) string {
+	return fmt.Sprintf(`INSERT INTO %s (version_id, is_applied) VALUES (?, ?)`, tableName)
+}
+
+func (sqliteQuerier) DeleteVersion(tableName string) string {
+	return fmt.Sprintf(`DELETE FROM %s WHERE version_id=?`, tableName)
+}
+
+func (sqliteQuerier) GetMigrationByVersion(tableName string) string {
+	return fmt.Sprintf(`SELECT tstamp, is_applied FROM %s WHERE version_id=? ORDER BY tstamp DESC LIMIT 1`, tableName)
+}
+
+func (sqliteQuerier) ListMigrations(tableName string) string {
+	return fmt.Sprintf(`SELECT version_id, is_applied from %s ORDER BY id DESC`, tableName)
+}
+
+func (sqliteQuerier) GetLatestVersion(tableName string) string {
+	return fmt.Sprintf(`SELECT MAX(version_id) FROM %s`, tableName)
+}
+
+// TableExists reports whether the version table exists. Unlike the built-in
+// sqlite3 querier, this lets goose recognize pre-existing goose_db_version tables.
+func (sqliteQuerier) TableExists(tableName string) string {
+	return fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '%s')`, tableName)
+}
+
+// MaxKnownVersion returns the highest migration version embedded in this binary.
+func MaxKnownVersion() int64 {
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		// The migrations directory is embedded at build time; failing to read it
+		// is a build/packaging bug, not a runtime condition.
+		panic(fmt.Sprintf("failed to read embedded migrations: %v", err))
+	}
+	var max int64
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -54,83 +118,73 @@ func loadMigrations() ([]migration, error) {
 		}
 		version, err := strconv.ParseInt(m[1], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid migration version in %q: %w", entry.Name(), err)
+			panic(fmt.Sprintf("invalid migration version in %q: %v", entry.Name(), err))
 		}
-		content, err := migrationsFS.ReadFile("migrations/" + entry.Name())
-		if err != nil {
-			return nil, fmt.Errorf("failed to read migration %q: %w", entry.Name(), err)
+		if version > max {
+			max = version
 		}
-		migrations = append(migrations, migration{
-			version: version,
-			name:    entry.Name(),
-			up:      extractUpSection(string(content)),
-		})
 	}
-	sort.Slice(migrations, func(i, j int) bool { return migrations[i].version < migrations[j].version })
-	return migrations, nil
-}
-
-// extractUpSection returns the SQL between the goose Up and Down annotations.
-func extractUpSection(content string) string {
-	up := content
-	if idx := strings.Index(up, "-- +goose Up"); idx >= 0 {
-		up = up[idx+len("-- +goose Up"):]
-	}
-	if idx := strings.Index(up, "-- +goose Down"); idx >= 0 {
-		up = up[:idx]
-	}
-	return strings.TrimSpace(up)
+	return max
 }
 
 // SchemaVersion returns the latest applied goose migration version (0 for a fresh database).
 func SchemaVersion(ctx context.Context, db *sql.DB) (int64, error) {
-	var version int64
-	err := db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version").Scan(&version)
+	p, err := providerFor(db)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such table") {
-			return 0, nil
-		}
+		return 0, err
+	}
+	version, err := p.GetDBVersion(ctx)
+	if err != nil {
 		return 0, fmt.Errorf("failed to query schema version: %w", err)
 	}
 	return version, nil
 }
 
-// Migrate runs all pending migrations on the database.
+// Migrate runs all pending migrations on the database via the goose provider.
 // If the database is at a higher version than the binary supports, it returns ErrSchemaTooNew.
-// If there are pending migrations, it takes a backup first.
+// If an existing database has pending migrations, it takes a backup first.
 func Migrate(ctx context.Context, db *sql.DB, backupDir string) error {
-	currentVersion, err := SchemaVersion(ctx, db)
+	p, err := providerFor(db)
 	if err != nil {
 		return err
+	}
+	maxVersion := MaxKnownVersion()
+
+	before, err := p.GetDBVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query schema version: %w", err)
 	}
 
 	// Check if schema is too new
-	if currentVersion > CurrentSchemaVersion {
-		return fmt.Errorf("%w: database version %d, max supported %d", ErrSchemaTooNew, currentVersion, CurrentSchemaVersion)
+	if before > maxVersion {
+		return fmt.Errorf("%w: database version %d, max supported %d", ErrSchemaTooNew, before, maxVersion)
 	}
 
-	migrations, err := loadMigrations()
-	if err != nil {
-		return err
-	}
-
-	var pending []migration
-	for _, m := range migrations {
-		if m.version > currentVersion && m.version <= CurrentSchemaVersion {
-			pending = append(pending, m)
-		}
-	}
-
-	if len(pending) > 0 {
-		// Take a backup before migrating
+	// Back up an existing database before applying pending migrations. A fresh
+	// database (version 0) is not backed up, and neither is an up-to-date one.
+	backedUp := false
+	if before > 0 && before < maxVersion {
 		if err := Backup(ctx, db, backupDir, "pre-migrate"); err != nil {
 			return fmt.Errorf("failed to create backup before migration: %w", err)
 		}
-		for _, m := range pending {
-			if err := applyMigration(ctx, db, m); err != nil {
-				return fmt.Errorf("failed to apply migration %s: %w", m.name, err)
-			}
+		backedUp = true
+	}
+
+	if _, err := p.Up(ctx); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
+	// Data backfill for M1: seed default subcategories the first time migration
+	// 00002 is applied (fresh databases and upgrades crossing v2). Idempotent, so
+	// running it in its own transaction instead of inside migration 00002 is safe,
+	// and user-deleted defaults are never re-added on later upgrades.
+	if before < 2 && maxVersion >= 2 {
+		if err := seedDefaultSubcategories(ctx, db); err != nil {
+			return fmt.Errorf("failed to seed default subcategories: %w", err)
 		}
+	}
+
+	if backedUp {
 		if err := RetainBackups(backupDir, maxBackups); err != nil {
 			return fmt.Errorf("failed to retain backups: %w", err)
 		}
@@ -144,41 +198,15 @@ func Migrate(ctx context.Context, db *sql.DB, backupDir string) error {
 	return nil
 }
 
-// applyMigration applies a single migration in a transaction and records its version.
-func applyMigration(ctx context.Context, db *sql.DB, m migration) error {
-	tx, err := db.BeginTx(ctx, nil)
+// downTo rolls the database back to the given version. Dev-only: the production
+// rollback strategy is backups (docs/migrations.md). Exposed for tests.
+func downTo(ctx context.Context, db *sql.DB, version int64) error {
+	p, err := providerFor(db)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS goose_db_version (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			version_id INTEGER NOT NULL UNIQUE,
-			is_applied BOOLEAN NOT NULL DEFAULT 1,
-			tstamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
-		)
-	`); err != nil {
-		return fmt.Errorf("failed to create goose_db_version table: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, m.up); err != nil {
-		return err
-	}
-
-	if _, err := tx.ExecContext(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, 1)`, m.version); err != nil {
-		return fmt.Errorf("failed to record migration version: %w", err)
-	}
-
-	// Data backfill for M1: seed default subcategories as shades of each category's base hue (CAT-5).
-	if m.version == 2 {
-		if err := seedDefaultSubcategories(ctx, tx); err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
+	_, err = p.DownTo(ctx, version)
+	return err
 }
 
 // defaultSubcategories lists the seeded subcategory names per category key.
@@ -191,7 +219,14 @@ var defaultSubcategories = map[string][]string{
 
 // seedDefaultSubcategories inserts the default subcategories for each category,
 // with colors auto-generated as shades of the category base hue. Idempotent.
-func seedDefaultSubcategories(ctx context.Context, tx *sql.Tx) error {
+// It runs in its own transaction.
+func seedDefaultSubcategories(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	rows, err := tx.QueryContext(ctx, "SELECT id, key, color FROM category ORDER BY id")
 	if err != nil {
 		return fmt.Errorf("failed to list categories: %w", err)
@@ -233,7 +268,7 @@ func seedDefaultSubcategories(ctx context.Context, tx *sql.Tx) error {
 			}
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 // integrityCheck runs PRAGMA integrity_check and foreign_key_check.

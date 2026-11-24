@@ -196,20 +196,20 @@ Fixture databases from previous releases are stored in `testdata/fixtures/db/`. 
 # 1. Test migration on empty database
 rm -f testdata/test-empty.sqlite
 sqlite3 testdata/test-empty.sqlite "VACUUM;"
-goose -dir internal/db/migrations sqlite3 testdata/test-empty.sqlite up
-goose -dir internal/db/migrations sqlite3 testdata/test-empty.sqlite verify
+goose -dir internal/db/migrations sqlite testdata/test-empty.sqlite up
+goose -dir internal/db/migrations sqlite testdata/test-empty.sqlite verify
 
 # 2. Check integrity
 sqlite3 testdata/test-empty.sqlite "PRAGMA integrity_check; PRAGMA foreign_key_check;"
 
 # 3. Test round-trip (dev only)
-goose -dir internal/db/migrations sqlite3 testdata/test-empty.sqlite down 0
-goose -dir internal/db/migrations sqlite3 testdata/test-empty.sqlite up
+goose -dir internal/db/migrations sqlite testdata/test-empty.sqlite down 0
+goose -dir internal/db/migrations sqlite testdata/test-empty.sqlite up
 
 # 4. Test on fixture database from previous release
 cp testdata/fixtures/db/finance-v1.0.0.sqlite testdata/test-fixture.sqlite
-goose -dir internal/db/migrations sqlite3 testdata/test-fixture.sqlite up
-goose -dir internal/db/migrations sqlite3 testdata/test-fixture.sqlite verify
+goose -dir internal/db/migrations sqlite testdata/test-fixture.sqlite up
+goose -dir internal/db/migrations sqlite testdata/test-fixture.sqlite verify
 sqlite3 testdata/test-fixture.sqlite "PRAGMA integrity_check; PRAGMA foreign_key_check;"
 ```
 
@@ -252,39 +252,58 @@ For SQLite, this simple ALTER TABLE works. But for more complex changes (adding 
 
 ## Goose Configuration
 
-FinanceAnalysis uses goose with embedded migrations:
+The app runs migrations at startup through the goose **provider API** (`db.Migrate` in
+`internal/db/migrate.go`), not through a custom runner:
 
 ```go
-import "embed"
-
 //go:embed migrations/*.sql
-var embedMigrations embed.FS
+var migrationsFS embed.FS
 
-provider, err := goose.NewProvider("sqlite3", db, goose.WithFS(embedMigrations))
+sub, _ := fs.Sub(migrationsFS, "migrations")
+store, _ := database.NewStoreFromQuerier(goose.DefaultTablename, sqliteQuerier{})
+provider, err := goose.NewProvider(goose.DialectCustom, db, sub,
+    goose.WithStore(store), goose.WithSlog(slog.Default()))
 ```
 
-The goose provider is configured to:
-- Use SQLite as the database driver
-- Read migrations from the embedded filesystem
-- Track applied migrations in the `goose_db_version` table
+(`sqliteQuerier` in `internal/db/migrate.go` is goose's SQLite querier plus a working
+`TableExists`, so databases whose `goose_db_version` table was written by the previous
+hand-rolled runner are recognized without modification.)
+
+Notes:
+
+- The `*sql.DB` is opened with modernc.org/sqlite (driver name `"sqlite"`, pure Go), so
+  the build stays `CGO_ENABLED=0`; the provider only needs the SQL dialect, not a driver.
+- Migrations are read from the embedded filesystem and tracked in the standard
+  `goose_db_version` table (`id, version_id, is_applied, tstamp`).
+- The app keeps its own guarantees on top of goose: `ErrSchemaTooNew` refusal for newer
+  schemas, a pre-migrate backup for existing databases with pending migrations, backup
+  retention, integrity/foreign-key checks after migrating, and the one-time v2
+  subcategory seed (`db.Migrate` runs it when the database crosses version 2).
+- goose parses and splits statements itself; each migration is wrapped in a transaction
+  unless it carries `-- +goose NO TRANSACTION`. Migrations with triggers or `;` inside
+  string literals must use `-- +goose StatementBegin` / `-- +goose StatementEnd`, and any
+  `PRAGMA foreign_keys` toggle needs `-- +goose NO TRANSACTION`.
 
 ## Useful Commands
 
+The goose CLI uses the modernc.org/sqlite driver under the name `sqlite` (pure Go; do not
+use `sqlite3` here, which in other tooling refers to the mattn CGO driver):
+
 ```bash
 # List all migrations
-goose -dir internal/db/migrations sqlite3 ./data/finance.sqlite list
+goose -dir internal/db/migrations sqlite ./data/finance.sqlite list
 
 # Show current version
-goose -dir internal/db/migrations sqlite3 ./data/finance.sqlite version
+goose -dir internal/db/migrations sqlite ./data/finance.sqlite version
 
 # Apply pending migrations
-goose -dir internal/db/migrations sqlite3 ./data/finance.sqlite up
+goose -dir internal/db/migrations sqlite ./data/finance.sqlite up
 
-# Roll back to a specific version
-goose -dir internal/db/migrations sqlite3 ./data/finance.sqlite down <version>
+# Roll back to a specific version (dev only; production rollback is backups)
+goose -dir internal/db/migrations sqlite ./data/finance.sqlite down <version>
 
 # Verify migrations match
-goose -dir internal/db/migrations sqlite3 ./data/finance.sqlite verify
+goose -dir internal/db/migrations sqlite ./data/finance.sqlite verify
 ```
 
 ## Versioning Strategy
