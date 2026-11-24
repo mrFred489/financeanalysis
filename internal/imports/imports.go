@@ -20,6 +20,7 @@ import (
 	"github.com/mrFred489/financeanalysis/internal/db"
 	"github.com/mrFred489/financeanalysis/internal/db/dbq"
 	"github.com/mrFred489/financeanalysis/internal/rules"
+	"github.com/mrFred489/financeanalysis/internal/transfers"
 )
 
 // ErrInvalidPreviewToken is returned when the preview token does not match the
@@ -57,9 +58,11 @@ type CommitResult struct {
 	FileName          string                `json:"fileName"`
 	LinesImported     int                   `json:"linesImported"`
 	DuplicatesSkipped int                   `json:"duplicatesSkipped"`
-	Uncategorized     int                   `json:"uncategorized"`   // source = 'none' after rule evaluation
-	RuleCategorized   int                   `json:"ruleCategorized"` // IMP-11/12: source = 'rule'
-	RuleConflicts     int                   `json:"ruleConflicts"`   // IMP-12: source = 'conflict'
+	Uncategorized     int                   `json:"uncategorized"`     // source = 'none' after rule evaluation
+	RuleCategorized   int                   `json:"ruleCategorized"`   // IMP-11/12: source = 'rule'
+	RuleConflicts     int                   `json:"ruleConflicts"`     // IMP-12: source = 'conflict'
+	TransferMatched   int                   `json:"transferMatched"`   // M4 IMP-11/12: pairs auto-linked as transfers
+	TransferAmbiguous int                   `json:"transferAmbiguous"` // M4 IMP-12: ambiguous candidate groups
 	ParseErrors       []csvparse.ParseError `json:"parseErrors"`
 }
 
@@ -315,6 +318,19 @@ func Commit(ctx context.Context, d *sql.DB, secret []byte, backupDir string, acc
 		newLineIDs = append(newLineIDs, id)
 	}
 
+	// IMP-11 (M4 D9): run transfer detection over all data inside the import
+	// transaction, before rule evaluation, so freshly linked lines
+	// (source='transfer') are skipped by the rules engine. Not recorded in the
+	// action log (D4: detection is derived state; UNDO-4 covers imports).
+	autoPairs, ambiguousGroups, err := transfers.Detect(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("transfer detection failed: %w", err)
+	}
+	if _, err := transfers.ApplyAutoLinks(ctx, q, autoPairs); err != nil {
+		return nil, fmt.Errorf("applying transfer links failed: %w", err)
+	}
+	transferMatched, transferAmbiguous := len(autoPairs), len(ambiguousGroups)
+
 	// IMP-11 (M3 D11): run rule evaluation on the new lines inside the import
 	// transaction. Not recorded in the action log (UNDO-4: the import has its
 	// own undo, which deletes the lines and cascades conflict_resolution).
@@ -352,6 +368,8 @@ func Commit(ctx context.Context, d *sql.DB, secret []byte, backupDir string, acc
 		Uncategorized:     countBySource(`["none"]`),
 		RuleCategorized:   countBySource(`["rule"]`),
 		RuleConflicts:     countBySource(`["conflict"]`),
+		TransferMatched:   transferMatched,
+		TransferAmbiguous: transferAmbiguous,
 		ParseErrors:       parsed.Errors,
 	}, nil
 }
@@ -401,7 +419,10 @@ func nullInt64(v *int64) sql.NullInt64 {
 }
 
 // UndoLatest deletes the lines of the latest non-undone import batch (globally)
-// and marks it undone (IMP-13). A backup is taken first.
+// and marks it undone (IMP-13). A backup is taken first. Transfer links of the
+// deleted lines are removed by ON DELETE CASCADE; rejection rows referencing the
+// deleted lines are removed explicitly; the surviving counterpart lines go back
+// to rule evaluation.
 func UndoLatest(ctx context.Context, d *sql.DB, backupDir string) (int64, error) {
 	q := dbq.New(d)
 	batch, err := q.GetLatestNonUndoneImport(ctx)
@@ -422,13 +443,68 @@ func UndoLatest(ctx context.Context, d *sql.DB, backupDir string) (int64, error)
 	}
 	defer tx.Rollback()
 	qt := dbq.New(d).WithTx(tx)
+	importID := sql.NullInt64{Int64: batch.ID, Valid: true}
 
-	if err := qt.DeleteLinesByImport(ctx, sql.NullInt64{Int64: batch.ID, Valid: true}); err != nil {
+	// M4 IMP-13: find the links touching this batch's lines before deleting them,
+	// so the surviving counterpart can be re-evaluated afterwards.
+	links, err := qt.ListTransferLinksByImport(ctx, importID)
+	if err != nil {
+		return 0, fmt.Errorf("list transfer links by import: %w", err)
+	}
+	lineIDs, err := qt.ListLineIdsByImport(ctx, importID)
+	if err != nil {
+		return 0, fmt.Errorf("list line ids by import: %w", err)
+	}
+	inBatch := map[int64]bool{}
+	for _, id := range lineIDs {
+		inBatch[id] = true
+	}
+	var counterpartIDs []int64
+	for _, l := range links {
+		if inBatch[l.OutLineID] {
+			counterpartIDs = append(counterpartIDs, l.InLineID)
+		} else {
+			counterpartIDs = append(counterpartIDs, l.OutLineID)
+		}
+	}
+
+	// Rejection rows referencing the deleted lines are cleaned up explicitly
+	// (they have no FK); the links themselves cascade with the lines.
+	if err := qt.DeleteRejectionsByImport(ctx, importID); err != nil {
+		return 0, fmt.Errorf("delete transfer rejections: %w", err)
+	}
+	if err := qt.DeleteLinesByImport(ctx, importID); err != nil {
 		return 0, err
 	}
 	if err := qt.MarkImportUndone(ctx, batch.ID); err != nil {
 		return 0, err
 	}
+
+	// The counterpart line (not deleted) loses its link: if it was only marked
+	// as transfer, reset it and re-evaluate through the rules engine. A side
+	// the user manually recategorized (source='manual', TRF-8) is left alone.
+	var reeval []int64
+	for _, id := range counterpartIDs {
+		row, err := qt.GetLineForAction(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		if row.Source == "transfer" {
+			if err := qt.ClearLineTransfer(ctx, id); err != nil {
+				return 0, err
+			}
+			reeval = append(reeval, id)
+		}
+	}
+	if len(reeval) > 0 {
+		if _, err := rules.EvaluateLines(ctx, qt, reeval); err != nil {
+			return 0, fmt.Errorf("re-evaluate transfer counterparts: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}

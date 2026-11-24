@@ -109,3 +109,17 @@ type Subcategory struct {
 	Hotkey     sql.NullString `json:"hotkey"`
 	SortOrder  int64          `json:"sort_order"`
 }
+
+type TransferLink struct {
+	ID        int64  `json:"id"`
+	OutLineID int64  `json:"out_line_id"`
+	InLineID  int64  `json:"in_line_id"`
+	Method    string `json:"method"`
+	CreatedAt string `json:"created_at"`
+}
+
+type TransferRejection struct {
+	OutLineID int64  `json:"out_line_id"`
+	InLineID  int64  `json:"in_line_id"`
+	CreatedAt string `json:"created_at"`
+}

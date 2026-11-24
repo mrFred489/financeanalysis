@@ -29,30 +29,32 @@ type lineFilters struct {
 
 // lineJSON is the API representation of one statement line (STMT-1).
 type lineJSON struct {
-	ID                  int64   `json:"id"`
-	AccountID           int64   `json:"accountId"`
-	AccountName         string  `json:"accountName"`
-	ImportID            *int64  `json:"importId"`
-	BookingDate         string  `json:"bookingDate"`
-	TransactionDate     *string `json:"transactionDate"`
-	ValueDate           *string `json:"valueDate"`
-	Message             string  `json:"message"`
-	AmountMinor         int64   `json:"amountMinor"`
-	BalanceMinor        *int64  `json:"balanceMinor"` // null when the bank format has no balance
-	Currency            string  `json:"currency"`
-	BankRef             *string `json:"bankRef"`
-	CounterpartyAccount *string `json:"counterpartyAccount"`
-	FileRow             int64   `json:"fileRow"`
-	Seq                 int64   `json:"seq"`
-	Occurrence          int64   `json:"occurrence"`
-	SubcategoryID       *int64  `json:"subcategoryId"`
-	SubcategoryName     *string `json:"subcategoryName"`
-	SubcategoryColor    *string `json:"subcategoryColor"`
-	CategoryID          *int64  `json:"categoryId"`
-	CategoryName        *string `json:"categoryName"`
-	Source              string  `json:"source"`
-	RuleID              *int64  `json:"ruleId"`
-	SpreadMonths        int64   `json:"spreadMonths"`
+	ID                    int64   `json:"id"`
+	AccountID             int64   `json:"accountId"`
+	AccountName           string  `json:"accountName"`
+	ImportID              *int64  `json:"importId"`
+	BookingDate           string  `json:"bookingDate"`
+	TransactionDate       *string `json:"transactionDate"`
+	ValueDate             *string `json:"valueDate"`
+	Message               string  `json:"message"`
+	AmountMinor           int64   `json:"amountMinor"`
+	BalanceMinor          *int64  `json:"balanceMinor"` // null when the bank format has no balance
+	Currency              string  `json:"currency"`
+	BankRef               *string `json:"bankRef"`
+	CounterpartyAccount   *string `json:"counterpartyAccount"`
+	FileRow               int64   `json:"fileRow"`
+	Seq                   int64   `json:"seq"`
+	Occurrence            int64   `json:"occurrence"`
+	SubcategoryID         *int64  `json:"subcategoryId"`
+	SubcategoryName       *string `json:"subcategoryName"`
+	SubcategoryColor      *string `json:"subcategoryColor"`
+	CategoryID            *int64  `json:"categoryId"`
+	CategoryName          *string `json:"categoryName"`
+	Source                string  `json:"source"`
+	RuleID                *int64  `json:"ruleId"`
+	SpreadMonths          int64   `json:"spreadMonths"`
+	TransferLinkID        *int64  `json:"transferLinkId"`        // M4 D11: null when not linked
+	TransferCounterpartID *int64  `json:"transferCounterpartId"` // M4 D11: the other side of the link
 }
 
 // linesResponse is the paginated result of GET /api/lines (STMT-3/STMT-4).
@@ -79,11 +81,15 @@ const linesSelect = `SELECT
     sl.file_row, sl.seq, sl.occurrence,
     sl.subcategory_id, sc.name AS subcategory_name, sc.color AS subcategory_color,
     c.id AS category_id, c.name AS category_name,
-    sl.source, sl.rule_id, sl.spread_months
+    sl.source, sl.rule_id, sl.spread_months,
+    CASE WHEN tlo.id IS NOT NULL THEN tlo.id WHEN tli.id IS NOT NULL THEN tli.id END AS transfer_link_id,
+    CASE WHEN tlo.out_line_id IS NOT NULL THEN tlo.in_line_id ELSE tli.out_line_id END AS transfer_counterpart_id
 FROM statement_line sl
 JOIN account a ON a.id = sl.account_id
 LEFT JOIN subcategory sc ON sc.id = sl.subcategory_id
-LEFT JOIN category c ON c.id = sc.category_id`
+LEFT JOIN category c ON c.id = sc.category_id
+LEFT JOIN transfer_link tlo ON tlo.out_line_id = sl.id
+LEFT JOIN transfer_link tli ON tli.in_line_id = sl.id`
 
 // linesWhere is the shared filter predicate; each filter binds its value twice.
 const linesWhere = `WHERE (? IS NULL OR sl.booking_date >= ?)
@@ -365,6 +371,7 @@ func (s *Server) handleListLines() http.HandlerFunc {
 				&row.SubcategoryID, &row.SubcategoryName, &row.SubcategoryColor,
 				&row.CategoryID, &row.CategoryName,
 				&row.Source, &row.RuleID, &row.SpreadMonths,
+				&row.TransferLinkID, &row.TransferCounterpartID,
 			); err != nil {
 				writeError(w, http.StatusInternalServerError, APIError{Code: "db_error", Message: err.Error()})
 				return
@@ -388,6 +395,8 @@ func (s *Server) handleListLines() http.HandlerFunc {
 				CategoryID:       nullIntPtr(row.CategoryID),
 				CategoryName:     nullStrPtr(row.CategoryName),
 				Source:           row.Source, RuleID: nullIntPtr(row.RuleID), SpreadMonths: row.SpreadMonths,
+				TransferLinkID:        nullIntAny(row.TransferLinkID),
+				TransferCounterpartID: nullIntAny(row.TransferCounterpartID),
 			})
 		}
 		if err := rows.Err(); err != nil {
@@ -449,7 +458,25 @@ func (s *Server) handleGetLine() http.HandlerFunc {
 			CategoryID:       nullIntPtr(row.CategoryID),
 			CategoryName:     nullStrPtr(row.CategoryName),
 			Source:           row.Source, RuleID: nullIntPtr(row.RuleID), SpreadMonths: row.SpreadMonths,
+			TransferLinkID:        nullIntAny(row.TransferLinkID),
+			TransferCounterpartID: nullIntAny(row.TransferCounterpartID),
 		})
+	}
+}
+
+// nullIntAny converts a nullable INTEGER column scanned as interface{} (sqlc
+// types CASE/COALESCE expressions that way) into *int64 for the API JSON.
+func nullIntAny(v any) *int64 {
+	switch n := v.(type) {
+	case nil:
+		return nil
+	case int64:
+		return &n
+	case float64:
+		i := int64(n)
+		return &i
+	default:
+		return nil
 	}
 }
 

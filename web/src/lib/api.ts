@@ -147,6 +147,8 @@ export interface CommitResult {
 	uncategorized: number;
 	ruleCategorized: number; // M3 IMP-11/12: lines auto-categorized by rules on import
 	ruleConflicts: number; // M3 IMP-12: lines left in conflict
+	transferMatched: number; // M4 IMP-11/12: pairs auto-linked as transfers on import
+	transferAmbiguous: number; // M4 IMP-12: ambiguous transfer candidate groups
 	parseErrors: ParseError[];
 }
 
@@ -175,6 +177,8 @@ export interface StatementLine {
 	source: string;
 	ruleId: number | null;
 	spreadMonths: number;
+	transferLinkId: number | null; // M4 D11: null when the line is not linked
+	transferCounterpartId: number | null; // M4 D11: the other side of the link
 }
 
 export interface LinesTotals {
@@ -639,6 +643,88 @@ export async function resolveConflict(lineId: number, ruleId: number): Promise<S
 
 export async function unresolveConflict(lineId: number): Promise<StatementLine> {
 	return apiFetch<StatementLine>(`/lines/${lineId}/resolve-conflict`, { method: 'DELETE' });
+}
+
+// --- M4 transfers (TRF-1..9) ---
+
+export interface TransferSide {
+	id: number;
+	accountId: number;
+	accountName: string;
+	bookingDate: string;
+	message: string;
+	amountMinor: number;
+}
+
+export interface TransferLink {
+	id: number;
+	outLineId: number;
+	inLineId: number;
+	method: 'auto' | 'manual';
+	createdAt: string;
+	out: TransferSide;
+	in: TransferSide;
+}
+
+export interface ReviewGroup {
+	outLine: StatementLine;
+	candidates: StatementLine[];
+}
+
+export interface DetectResult {
+	autoLinked: number;
+	ambiguous: number;
+}
+
+export interface LineTransfer {
+	link: {
+		id: number;
+		out_line_id: number;
+		in_line_id: number;
+		method: string;
+		created_at: string;
+	} | null;
+	counterpart: StatementLine | null;
+}
+
+export async function listTransfers(): Promise<TransferLink[]> {
+	return apiFetch<TransferLink[]>('/transfers');
+}
+
+export async function detectTransfers(): Promise<DetectResult> {
+	return apiFetch<DetectResult>('/transfers/detect', { method: 'POST' });
+}
+
+export async function listTransferReview(): Promise<ReviewGroup[]> {
+	return apiFetch<ReviewGroup[]>('/transfers/review');
+}
+
+export async function linkTransfer(outLineId: number, inLineId: number): Promise<TransferLink> {
+	return apiFetch<TransferLink>('/transfers/link', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ outLineId, inLineId })
+	});
+}
+
+export async function unlinkTransfer(
+	linkId: number
+): Promise<{ status: string; linkId: number; lines: StatementLine[] }> {
+	return apiFetch(`/transfers/${linkId}/unlink`, { method: 'POST' });
+}
+
+export async function dismissTransferGroup(
+	outLineId: number
+): Promise<{ status: string; outLineId: number; dismissed: number }> {
+	return apiFetch('/transfers/review/dismiss', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ outLineId })
+	});
+}
+
+export async function getLineTransfer(lineId: number): Promise<LineTransfer> {
+	return apiFetch<LineTransfer>(`/lines/${lineId}/transfer`);
 }
 
 export { ni };

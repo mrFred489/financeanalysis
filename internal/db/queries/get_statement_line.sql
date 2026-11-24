@@ -1,4 +1,6 @@
 -- name: GetStatementLine :one
+-- M4 D11: transfer_link_id / transfer_counterpart_id from a LEFT JOIN on
+-- transfer_link (either side); both NULL when the line is not linked.
 SELECT
     sl.id, sl.account_id, a.name AS account_name, sl.import_id,
     sl.booking_date, sl.transaction_date, sl.value_date,
@@ -7,9 +9,13 @@ SELECT
     sl.file_row, sl.seq, sl.occurrence,
     sl.subcategory_id, sc.name AS subcategory_name, sc.color AS subcategory_color,
     c.id AS category_id, c.name AS category_name,
-    sl.source, sl.rule_id, sl.spread_months
+    sl.source, sl.rule_id, sl.spread_months,
+    CASE WHEN tlo.id IS NOT NULL THEN tlo.id WHEN tli.id IS NOT NULL THEN tli.id END AS transfer_link_id,
+    CASE WHEN tlo.out_line_id IS NOT NULL THEN tlo.in_line_id ELSE tli.out_line_id END AS transfer_counterpart_id
 FROM statement_line sl
 JOIN account a ON a.id = sl.account_id
 LEFT JOIN subcategory sc ON sc.id = sl.subcategory_id
 LEFT JOIN category c ON c.id = sc.category_id
+LEFT JOIN transfer_link tlo ON tlo.out_line_id = sl.id
+LEFT JOIN transfer_link tli ON tli.in_line_id = sl.id
 WHERE sl.id = ?;

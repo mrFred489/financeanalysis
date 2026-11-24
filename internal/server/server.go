@@ -129,6 +129,15 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/lines/{id}/resolve-conflict", s.handleResolveConflict())
 	mux.Handle("DELETE /api/lines/{id}/resolve-conflict", s.handleUnresolveConflict())
 
+	// Transfers (M4, plan docs/plans/M4-transfers.md step 4)
+	mux.Handle("GET /api/transfers", s.handleListTransfers())
+	mux.Handle("POST /api/transfers/detect", s.handleDetectTransfers())
+	mux.Handle("GET /api/transfers/review", s.handleTransferReview())
+	mux.Handle("POST /api/transfers/link", s.handleLinkTransfer())
+	mux.Handle("POST /api/transfers/review/dismiss", s.handleDismissReview())
+	mux.Handle("POST /api/transfers/{id}/unlink", s.handleUnlinkTransfer())
+	mux.Handle("GET /api/lines/{id}/transfer", s.handleGetLineTransfer())
+
 	// Settings
 	mux.Handle("GET /api/settings", s.handleGetSettings())
 	mux.Handle("PUT /api/settings", s.handleUpdateSettings())

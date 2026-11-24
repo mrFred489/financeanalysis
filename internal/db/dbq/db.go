@@ -24,6 +24,9 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.clearLineTransferStmt, err = db.PrepareContext(ctx, clearLineTransfer); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearLineTransfer: %w", err)
+	}
 	if q.countAccountLinesStmt, err = db.PrepareContext(ctx, countAccountLines); err != nil {
 		return nil, fmt.Errorf("error preparing query CountAccountLines: %w", err)
 	}
@@ -51,6 +54,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createSubcategoryStmt, err = db.PrepareContext(ctx, createSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSubcategory: %w", err)
 	}
+	if q.createTransferLinkStmt, err = db.PrepareContext(ctx, createTransferLink); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateTransferLink: %w", err)
+	}
 	if q.deleteAccountStmt, err = db.PrepareContext(ctx, deleteAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteAccount: %w", err)
 	}
@@ -66,6 +72,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteOldestActionsStmt, err = db.PrepareContext(ctx, deleteOldestActions); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteOldestActions: %w", err)
 	}
+	if q.deleteRejectionsByImportStmt, err = db.PrepareContext(ctx, deleteRejectionsByImport); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRejectionsByImport: %w", err)
+	}
 	if q.deleteRuleStmt, err = db.PrepareContext(ctx, deleteRule); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRule: %w", err)
 	}
@@ -74,6 +83,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteSubcategoryStmt, err = db.PrepareContext(ctx, deleteSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSubcategory: %w", err)
+	}
+	if q.deleteTransferLinkStmt, err = db.PrepareContext(ctx, deleteTransferLink); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteTransferLink: %w", err)
+	}
+	if q.deleteTransferRejectionStmt, err = db.PrepareContext(ctx, deleteTransferRejection); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteTransferRejection: %w", err)
 	}
 	if q.getAccountStmt, err = db.PrepareContext(ctx, getAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAccount: %w", err)
@@ -114,6 +129,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSubcategoryStmt, err = db.PrepareContext(ctx, getSubcategory); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSubcategory: %w", err)
 	}
+	if q.getTransferLinkStmt, err = db.PrepareContext(ctx, getTransferLink); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTransferLink: %w", err)
+	}
+	if q.getTransferLinkByLineStmt, err = db.PrepareContext(ctx, getTransferLinkByLine); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTransferLinkByLine: %w", err)
+	}
+	if q.getTransferRejectionStmt, err = db.PrepareContext(ctx, getTransferRejection); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTransferRejection: %w", err)
+	}
 	if q.importBatchExistsBySHAStmt, err = db.PrepareContext(ctx, importBatchExistsBySHA); err != nil {
 		return nil, fmt.Errorf("error preparing query ImportBatchExistsBySHA: %w", err)
 	}
@@ -128,6 +152,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.insertStatementLineStmt, err = db.PrepareContext(ctx, insertStatementLine); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertStatementLine: %w", err)
+	}
+	if q.insertTransferRejectionStmt, err = db.PrepareContext(ctx, insertTransferRejection); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertTransferRejection: %w", err)
 	}
 	if q.lineExistsStmt, err = db.PrepareContext(ctx, lineExists); err != nil {
 		return nil, fmt.Errorf("error preparing query LineExists: %w", err)
@@ -159,6 +186,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listImportBatchesStmt, err = db.PrepareContext(ctx, listImportBatches); err != nil {
 		return nil, fmt.Errorf("error preparing query ListImportBatches: %w", err)
 	}
+	if q.listLineIdsByImportStmt, err = db.PrepareContext(ctx, listLineIdsByImport); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLineIdsByImport: %w", err)
+	}
 	if q.listLinesByRuleStmt, err = db.PrepareContext(ctx, listLinesByRule); err != nil {
 		return nil, fmt.Errorf("error preparing query ListLinesByRule: %w", err)
 	}
@@ -183,6 +213,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listSubcategoriesByCategoryStmt, err = db.PrepareContext(ctx, listSubcategoriesByCategory); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSubcategoriesByCategory: %w", err)
 	}
+	if q.listTransferCandidatesStmt, err = db.PrepareContext(ctx, listTransferCandidates); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTransferCandidates: %w", err)
+	}
+	if q.listTransferLinksStmt, err = db.PrepareContext(ctx, listTransferLinks); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTransferLinks: %w", err)
+	}
+	if q.listTransferLinksByImportStmt, err = db.PrepareContext(ctx, listTransferLinksByImport); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTransferLinksByImport: %w", err)
+	}
+	if q.listTransferRejectionsStmt, err = db.PrepareContext(ctx, listTransferRejections); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTransferRejections: %w", err)
+	}
 	if q.markActionRedoneStmt, err = db.PrepareContext(ctx, markActionRedone); err != nil {
 		return nil, fmt.Errorf("error preparing query MarkActionRedone: %w", err)
 	}
@@ -198,6 +240,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.resetLineToRulesStmt, err = db.PrepareContext(ctx, resetLineToRules); err != nil {
 		return nil, fmt.Errorf("error preparing query ResetLineToRules: %w", err)
 	}
+	if q.setLineSourceTransferStmt, err = db.PrepareContext(ctx, setLineSourceTransfer); err != nil {
+		return nil, fmt.Errorf("error preparing query SetLineSourceTransfer: %w", err)
+	}
 	if q.setLineSpreadStmt, err = db.PrepareContext(ctx, setLineSpread); err != nil {
 		return nil, fmt.Errorf("error preparing query SetLineSpread: %w", err)
 	}
@@ -209,6 +254,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.statementLineTotalsStmt, err = db.PrepareContext(ctx, statementLineTotals); err != nil {
 		return nil, fmt.Errorf("error preparing query StatementLineTotals: %w", err)
+	}
+	if q.transferRejectionExistsStmt, err = db.PrepareContext(ctx, transferRejectionExists); err != nil {
+		return nil, fmt.Errorf("error preparing query TransferRejectionExists: %w", err)
 	}
 	if q.updateAccountStmt, err = db.PrepareContext(ctx, updateAccount); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateAccount: %w", err)
@@ -233,6 +281,11 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.clearLineTransferStmt != nil {
+		if cerr := q.clearLineTransferStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearLineTransferStmt: %w", cerr)
+		}
+	}
 	if q.countAccountLinesStmt != nil {
 		if cerr := q.countAccountLinesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countAccountLinesStmt: %w", cerr)
@@ -278,6 +331,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createSubcategoryStmt: %w", cerr)
 		}
 	}
+	if q.createTransferLinkStmt != nil {
+		if cerr := q.createTransferLinkStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createTransferLinkStmt: %w", cerr)
+		}
+	}
 	if q.deleteAccountStmt != nil {
 		if cerr := q.deleteAccountStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteAccountStmt: %w", cerr)
@@ -303,6 +361,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteOldestActionsStmt: %w", cerr)
 		}
 	}
+	if q.deleteRejectionsByImportStmt != nil {
+		if cerr := q.deleteRejectionsByImportStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRejectionsByImportStmt: %w", cerr)
+		}
+	}
 	if q.deleteRuleStmt != nil {
 		if cerr := q.deleteRuleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteRuleStmt: %w", cerr)
@@ -316,6 +379,16 @@ func (q *Queries) Close() error {
 	if q.deleteSubcategoryStmt != nil {
 		if cerr := q.deleteSubcategoryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSubcategoryStmt: %w", cerr)
+		}
+	}
+	if q.deleteTransferLinkStmt != nil {
+		if cerr := q.deleteTransferLinkStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteTransferLinkStmt: %w", cerr)
+		}
+	}
+	if q.deleteTransferRejectionStmt != nil {
+		if cerr := q.deleteTransferRejectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteTransferRejectionStmt: %w", cerr)
 		}
 	}
 	if q.getAccountStmt != nil {
@@ -383,6 +456,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSubcategoryStmt: %w", cerr)
 		}
 	}
+	if q.getTransferLinkStmt != nil {
+		if cerr := q.getTransferLinkStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTransferLinkStmt: %w", cerr)
+		}
+	}
+	if q.getTransferLinkByLineStmt != nil {
+		if cerr := q.getTransferLinkByLineStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTransferLinkByLineStmt: %w", cerr)
+		}
+	}
+	if q.getTransferRejectionStmt != nil {
+		if cerr := q.getTransferRejectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTransferRejectionStmt: %w", cerr)
+		}
+	}
 	if q.importBatchExistsBySHAStmt != nil {
 		if cerr := q.importBatchExistsBySHAStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing importBatchExistsBySHAStmt: %w", cerr)
@@ -406,6 +494,11 @@ func (q *Queries) Close() error {
 	if q.insertStatementLineStmt != nil {
 		if cerr := q.insertStatementLineStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertStatementLineStmt: %w", cerr)
+		}
+	}
+	if q.insertTransferRejectionStmt != nil {
+		if cerr := q.insertTransferRejectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertTransferRejectionStmt: %w", cerr)
 		}
 	}
 	if q.lineExistsStmt != nil {
@@ -458,6 +551,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listImportBatchesStmt: %w", cerr)
 		}
 	}
+	if q.listLineIdsByImportStmt != nil {
+		if cerr := q.listLineIdsByImportStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLineIdsByImportStmt: %w", cerr)
+		}
+	}
 	if q.listLinesByRuleStmt != nil {
 		if cerr := q.listLinesByRuleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listLinesByRuleStmt: %w", cerr)
@@ -498,6 +596,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listSubcategoriesByCategoryStmt: %w", cerr)
 		}
 	}
+	if q.listTransferCandidatesStmt != nil {
+		if cerr := q.listTransferCandidatesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTransferCandidatesStmt: %w", cerr)
+		}
+	}
+	if q.listTransferLinksStmt != nil {
+		if cerr := q.listTransferLinksStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTransferLinksStmt: %w", cerr)
+		}
+	}
+	if q.listTransferLinksByImportStmt != nil {
+		if cerr := q.listTransferLinksByImportStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTransferLinksByImportStmt: %w", cerr)
+		}
+	}
+	if q.listTransferRejectionsStmt != nil {
+		if cerr := q.listTransferRejectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTransferRejectionsStmt: %w", cerr)
+		}
+	}
 	if q.markActionRedoneStmt != nil {
 		if cerr := q.markActionRedoneStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing markActionRedoneStmt: %w", cerr)
@@ -523,6 +641,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing resetLineToRulesStmt: %w", cerr)
 		}
 	}
+	if q.setLineSourceTransferStmt != nil {
+		if cerr := q.setLineSourceTransferStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setLineSourceTransferStmt: %w", cerr)
+		}
+	}
 	if q.setLineSpreadStmt != nil {
 		if cerr := q.setLineSpreadStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setLineSpreadStmt: %w", cerr)
@@ -541,6 +664,11 @@ func (q *Queries) Close() error {
 	if q.statementLineTotalsStmt != nil {
 		if cerr := q.statementLineTotalsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing statementLineTotalsStmt: %w", cerr)
+		}
+	}
+	if q.transferRejectionExistsStmt != nil {
+		if cerr := q.transferRejectionExistsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing transferRejectionExistsStmt: %w", cerr)
 		}
 	}
 	if q.updateAccountStmt != nil {
@@ -612,6 +740,7 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                   DBTX
 	tx                                   *sql.Tx
+	clearLineTransferStmt                *sql.Stmt
 	countAccountLinesStmt                *sql.Stmt
 	countLinesByImportStmt               *sql.Stmt
 	countLinesByRuleStmt                 *sql.Stmt
@@ -621,14 +750,18 @@ type Queries struct {
 	createImportBatchStmt                *sql.Stmt
 	createRuleStmt                       *sql.Stmt
 	createSubcategoryStmt                *sql.Stmt
+	createTransferLinkStmt               *sql.Stmt
 	deleteAccountStmt                    *sql.Stmt
 	deleteConflictResolutionStmt         *sql.Stmt
 	deleteConflictResolutionsForRuleStmt *sql.Stmt
 	deleteLinesByImportStmt              *sql.Stmt
 	deleteOldestActionsStmt              *sql.Stmt
+	deleteRejectionsByImportStmt         *sql.Stmt
 	deleteRuleStmt                       *sql.Stmt
 	deleteRuleAccountsForRuleStmt        *sql.Stmt
 	deleteSubcategoryStmt                *sql.Stmt
+	deleteTransferLinkStmt               *sql.Stmt
+	deleteTransferRejectionStmt          *sql.Stmt
 	getAccountStmt                       *sql.Stmt
 	getActionStmt                        *sql.Stmt
 	getConflictResolutionStmt            *sql.Stmt
@@ -642,11 +775,15 @@ type Queries struct {
 	getSettingStmt                       *sql.Stmt
 	getStatementLineStmt                 *sql.Stmt
 	getSubcategoryStmt                   *sql.Stmt
+	getTransferLinkStmt                  *sql.Stmt
+	getTransferLinkByLineStmt            *sql.Stmt
+	getTransferRejectionStmt             *sql.Stmt
 	importBatchExistsBySHAStmt           *sql.Stmt
 	insertActionStmt                     *sql.Stmt
 	insertActionChangeStmt               *sql.Stmt
 	insertRuleAccountStmt                *sql.Stmt
 	insertStatementLineStmt              *sql.Stmt
+	insertTransferRejectionStmt          *sql.Stmt
 	lineExistsStmt                       *sql.Stmt
 	listAccountsStmt                     *sql.Stmt
 	listAccountsForRuleStmt              *sql.Stmt
@@ -657,6 +794,7 @@ type Queries struct {
 	listConflictResolutionsStmt          *sql.Stmt
 	listConflictedLinesStmt              *sql.Stmt
 	listImportBatchesStmt                *sql.Stmt
+	listLineIdsByImportStmt              *sql.Stmt
 	listLinesByRuleStmt                  *sql.Stmt
 	listLinesForRulesStmt                *sql.Stmt
 	listRuleAccountsStmt                 *sql.Stmt
@@ -665,15 +803,21 @@ type Queries struct {
 	listStatementLinesStmt               *sql.Stmt
 	listSubcategoriesStmt                *sql.Stmt
 	listSubcategoriesByCategoryStmt      *sql.Stmt
+	listTransferCandidatesStmt           *sql.Stmt
+	listTransferLinksStmt                *sql.Stmt
+	listTransferLinksByImportStmt        *sql.Stmt
+	listTransferRejectionsStmt           *sql.Stmt
 	markActionRedoneStmt                 *sql.Stmt
 	markActionUndoneStmt                 *sql.Stmt
 	markImportUndoneStmt                 *sql.Stmt
 	reassignLinesToSubcategoryStmt       *sql.Stmt
 	resetLineToRulesStmt                 *sql.Stmt
+	setLineSourceTransferStmt            *sql.Stmt
 	setLineSpreadStmt                    *sql.Stmt
 	setLineSubcategoryStmt               *sql.Stmt
 	setRuleEnabledStmt                   *sql.Stmt
 	statementLineTotalsStmt              *sql.Stmt
+	transferRejectionExistsStmt          *sql.Stmt
 	updateAccountStmt                    *sql.Stmt
 	updateLineSourceStmt                 *sql.Stmt
 	updateRuleStmt                       *sql.Stmt
@@ -686,6 +830,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                   tx,
 		tx:                                   tx,
+		clearLineTransferStmt:                q.clearLineTransferStmt,
 		countAccountLinesStmt:                q.countAccountLinesStmt,
 		countLinesByImportStmt:               q.countLinesByImportStmt,
 		countLinesByRuleStmt:                 q.countLinesByRuleStmt,
@@ -695,14 +840,18 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createImportBatchStmt:                q.createImportBatchStmt,
 		createRuleStmt:                       q.createRuleStmt,
 		createSubcategoryStmt:                q.createSubcategoryStmt,
+		createTransferLinkStmt:               q.createTransferLinkStmt,
 		deleteAccountStmt:                    q.deleteAccountStmt,
 		deleteConflictResolutionStmt:         q.deleteConflictResolutionStmt,
 		deleteConflictResolutionsForRuleStmt: q.deleteConflictResolutionsForRuleStmt,
 		deleteLinesByImportStmt:              q.deleteLinesByImportStmt,
 		deleteOldestActionsStmt:              q.deleteOldestActionsStmt,
+		deleteRejectionsByImportStmt:         q.deleteRejectionsByImportStmt,
 		deleteRuleStmt:                       q.deleteRuleStmt,
 		deleteRuleAccountsForRuleStmt:        q.deleteRuleAccountsForRuleStmt,
 		deleteSubcategoryStmt:                q.deleteSubcategoryStmt,
+		deleteTransferLinkStmt:               q.deleteTransferLinkStmt,
+		deleteTransferRejectionStmt:          q.deleteTransferRejectionStmt,
 		getAccountStmt:                       q.getAccountStmt,
 		getActionStmt:                        q.getActionStmt,
 		getConflictResolutionStmt:            q.getConflictResolutionStmt,
@@ -716,11 +865,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getSettingStmt:                       q.getSettingStmt,
 		getStatementLineStmt:                 q.getStatementLineStmt,
 		getSubcategoryStmt:                   q.getSubcategoryStmt,
+		getTransferLinkStmt:                  q.getTransferLinkStmt,
+		getTransferLinkByLineStmt:            q.getTransferLinkByLineStmt,
+		getTransferRejectionStmt:             q.getTransferRejectionStmt,
 		importBatchExistsBySHAStmt:           q.importBatchExistsBySHAStmt,
 		insertActionStmt:                     q.insertActionStmt,
 		insertActionChangeStmt:               q.insertActionChangeStmt,
 		insertRuleAccountStmt:                q.insertRuleAccountStmt,
 		insertStatementLineStmt:              q.insertStatementLineStmt,
+		insertTransferRejectionStmt:          q.insertTransferRejectionStmt,
 		lineExistsStmt:                       q.lineExistsStmt,
 		listAccountsStmt:                     q.listAccountsStmt,
 		listAccountsForRuleStmt:              q.listAccountsForRuleStmt,
@@ -731,6 +884,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listConflictResolutionsStmt:          q.listConflictResolutionsStmt,
 		listConflictedLinesStmt:              q.listConflictedLinesStmt,
 		listImportBatchesStmt:                q.listImportBatchesStmt,
+		listLineIdsByImportStmt:              q.listLineIdsByImportStmt,
 		listLinesByRuleStmt:                  q.listLinesByRuleStmt,
 		listLinesForRulesStmt:                q.listLinesForRulesStmt,
 		listRuleAccountsStmt:                 q.listRuleAccountsStmt,
@@ -739,15 +893,21 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listStatementLinesStmt:               q.listStatementLinesStmt,
 		listSubcategoriesStmt:                q.listSubcategoriesStmt,
 		listSubcategoriesByCategoryStmt:      q.listSubcategoriesByCategoryStmt,
+		listTransferCandidatesStmt:           q.listTransferCandidatesStmt,
+		listTransferLinksStmt:                q.listTransferLinksStmt,
+		listTransferLinksByImportStmt:        q.listTransferLinksByImportStmt,
+		listTransferRejectionsStmt:           q.listTransferRejectionsStmt,
 		markActionRedoneStmt:                 q.markActionRedoneStmt,
 		markActionUndoneStmt:                 q.markActionUndoneStmt,
 		markImportUndoneStmt:                 q.markImportUndoneStmt,
 		reassignLinesToSubcategoryStmt:       q.reassignLinesToSubcategoryStmt,
 		resetLineToRulesStmt:                 q.resetLineToRulesStmt,
+		setLineSourceTransferStmt:            q.setLineSourceTransferStmt,
 		setLineSpreadStmt:                    q.setLineSpreadStmt,
 		setLineSubcategoryStmt:               q.setLineSubcategoryStmt,
 		setRuleEnabledStmt:                   q.setRuleEnabledStmt,
 		statementLineTotalsStmt:              q.statementLineTotalsStmt,
+		transferRejectionExistsStmt:          q.transferRejectionExistsStmt,
 		updateAccountStmt:                    q.updateAccountStmt,
 		updateLineSourceStmt:                 q.updateLineSourceStmt,
 		updateRuleStmt:                       q.updateRuleStmt,

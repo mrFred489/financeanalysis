@@ -19,11 +19,15 @@ SELECT
     sl.file_row, sl.seq, sl.occurrence,
     sl.subcategory_id, sc.name AS subcategory_name, sc.color AS subcategory_color,
     c.id AS category_id, c.name AS category_name,
-    sl.source, sl.rule_id, sl.spread_months
+    sl.source, sl.rule_id, sl.spread_months,
+    CASE WHEN tlo.id IS NOT NULL THEN tlo.id WHEN tli.id IS NOT NULL THEN tli.id END AS transfer_link_id,
+    CASE WHEN tlo.out_line_id IS NOT NULL THEN tlo.in_line_id ELSE tli.out_line_id END AS transfer_counterpart_id
 FROM statement_line sl
 JOIN account a ON a.id = sl.account_id
 LEFT JOIN subcategory sc ON sc.id = sl.subcategory_id
 LEFT JOIN category c ON c.id = sc.category_id
+LEFT JOIN transfer_link tlo ON tlo.out_line_id = sl.id
+LEFT JOIN transfer_link tli ON tli.in_line_id = sl.id
 WHERE (?1 IS NULL OR sl.booking_date >= ?1)
   AND (?2 IS NULL OR sl.booking_date <= ?2)
   AND (?3 IS NULL OR sl.account_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?3)))
@@ -58,35 +62,39 @@ type ListStatementLinesParams struct {
 }
 
 type ListStatementLinesRow struct {
-	ID                  int64          `json:"id"`
-	AccountID           int64          `json:"account_id"`
-	AccountName         string         `json:"account_name"`
-	ImportID            sql.NullInt64  `json:"import_id"`
-	BookingDate         string         `json:"booking_date"`
-	TransactionDate     sql.NullString `json:"transaction_date"`
-	ValueDate           sql.NullString `json:"value_date"`
-	Message             string         `json:"message"`
-	AmountMinor         int64          `json:"amount_minor"`
-	BalanceMinor        sql.NullInt64  `json:"balance_minor"`
-	Currency            string         `json:"currency"`
-	BankRef             sql.NullString `json:"bank_ref"`
-	CounterpartyAccount sql.NullString `json:"counterparty_account"`
-	FileRow             int64          `json:"file_row"`
-	Seq                 int64          `json:"seq"`
-	Occurrence          int64          `json:"occurrence"`
-	SubcategoryID       sql.NullInt64  `json:"subcategory_id"`
-	SubcategoryName     sql.NullString `json:"subcategory_name"`
-	SubcategoryColor    sql.NullString `json:"subcategory_color"`
-	CategoryID          sql.NullInt64  `json:"category_id"`
-	CategoryName        sql.NullString `json:"category_name"`
-	Source              string         `json:"source"`
-	RuleID              sql.NullInt64  `json:"rule_id"`
-	SpreadMonths        int64          `json:"spread_months"`
+	ID                    int64          `json:"id"`
+	AccountID             int64          `json:"account_id"`
+	AccountName           string         `json:"account_name"`
+	ImportID              sql.NullInt64  `json:"import_id"`
+	BookingDate           string         `json:"booking_date"`
+	TransactionDate       sql.NullString `json:"transaction_date"`
+	ValueDate             sql.NullString `json:"value_date"`
+	Message               string         `json:"message"`
+	AmountMinor           int64          `json:"amount_minor"`
+	BalanceMinor          sql.NullInt64  `json:"balance_minor"`
+	Currency              string         `json:"currency"`
+	BankRef               sql.NullString `json:"bank_ref"`
+	CounterpartyAccount   sql.NullString `json:"counterparty_account"`
+	FileRow               int64          `json:"file_row"`
+	Seq                   int64          `json:"seq"`
+	Occurrence            int64          `json:"occurrence"`
+	SubcategoryID         sql.NullInt64  `json:"subcategory_id"`
+	SubcategoryName       sql.NullString `json:"subcategory_name"`
+	SubcategoryColor      sql.NullString `json:"subcategory_color"`
+	CategoryID            sql.NullInt64  `json:"category_id"`
+	CategoryName          sql.NullString `json:"category_name"`
+	Source                string         `json:"source"`
+	RuleID                sql.NullInt64  `json:"rule_id"`
+	SpreadMonths          int64          `json:"spread_months"`
+	TransferLinkID        interface{}    `json:"transfer_link_id"`
+	TransferCounterpartID interface{}    `json:"transfer_counterpart_id"`
 }
 
 // Filtered, paginated statement lines (STMT-2/STMT-3). NULL params disable the filter.
 // NOTE: ORDER BY is fixed here because sqlc cannot parameterize it; the server
 // builds the ORDER BY dynamically (whitelisted columns) and reuses this row type.
+// M4 D11: transfer_link_id / transfer_counterpart_id come from a LEFT JOIN on
+// transfer_link (either side); both NULL when the line is not linked.
 func (q *Queries) ListStatementLines(ctx context.Context, arg ListStatementLinesParams) ([]*ListStatementLinesRow, error) {
 	rows, err := q.query(ctx, q.listStatementLinesStmt, listStatementLines,
 		arg.FromDate,
@@ -136,6 +144,8 @@ func (q *Queries) ListStatementLines(ctx context.Context, arg ListStatementLines
 			&i.Source,
 			&i.RuleID,
 			&i.SpreadMonths,
+			&i.TransferLinkID,
+			&i.TransferCounterpartID,
 		); err != nil {
 			return nil, err
 		}

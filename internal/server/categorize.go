@@ -102,6 +102,10 @@ func lineJSONFromRow(row *dbq.GetStatementLineRow) lineJSON {
 		CategoryID:       nullIntPtr(row.CategoryID),
 		CategoryName:     nullStrPtr(row.CategoryName),
 		Source:           row.Source, RuleID: nullIntPtr(row.RuleID), SpreadMonths: row.SpreadMonths,
+		// M4 D11: the link this line participates in, if any (TRF-8: the link
+		// stays when one side is manually recategorized)
+		TransferLinkID:        nullIntAny(row.TransferLinkID),
+		TransferCounterpartID: nullIntAny(row.TransferCounterpartID),
 	}
 }
 

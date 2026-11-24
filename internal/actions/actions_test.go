@@ -586,3 +586,250 @@ func TestUndoConflictResolution(t *testing.T) {
 		t.Errorf("redo must restore source=rule, got %q", src)
 	}
 }
+
+// --- M4 transfer entities (plan docs/plans/M4-transfers.md step 3, D10) ---
+
+func insertLineOn(t *testing.T, ctx context.Context, d *sql.DB, accountID int64, seq int64, message string, amount int64, date string) int64 {
+	t.Helper()
+	res, err := d.ExecContext(ctx, `
+		INSERT INTO statement_line (account_id, booking_date, message, amount_minor, file_row, seq)
+		VALUES (?, ?, ?, ?, 1, ?)`, accountID, date, message, amount, seq)
+	if err != nil {
+		t.Fatalf("insert line: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func getLink(t *testing.T, ctx context.Context, q dbq.DBTX, id int64) *dbq.TransferLink {
+	t.Helper()
+	row, err := dbq.New(q).GetTransferLink(ctx, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		t.Fatalf("GetTransferLink: %v", err)
+	}
+	return row
+}
+
+func rejectionExists(t *testing.T, ctx context.Context, q dbq.DBTX, out, in int64) bool {
+	t.Helper()
+	n, err := dbq.New(q).TransferRejectionExists(ctx, dbq.TransferRejectionExistsParams{OutLineID: out, InLineID: in})
+	if err != nil {
+		t.Fatalf("TransferRejectionExists: %v", err)
+	}
+	return n > 0
+}
+
+// recordManualLink performs what POST /api/transfers/link does: one undoable
+// "transfer_link" action snapshotting both lines and the new link row.
+func recordManualLink(t *testing.T, ctx context.Context, d *sql.DB, outID, inID int64) int64 {
+	t.Helper()
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	q := dbq.New(tx)
+	beforeOut := getLine(t, ctx, tx, outID)
+	beforeIn := getLine(t, ctx, tx, inID)
+	link, err := q.CreateTransferLink(ctx, dbq.CreateTransferLinkParams{OutLineID: outID, InLineID: inID, Method: "manual"})
+	if err != nil {
+		t.Fatalf("CreateTransferLink: %v", err)
+	}
+	if err := q.SetLineSourceTransfer(ctx, outID); err != nil {
+		t.Fatalf("SetLineSourceTransfer out: %v", err)
+	}
+	if err := q.SetLineSourceTransfer(ctx, inID); err != nil {
+		t.Fatalf("SetLineSourceTransfer in: %v", err)
+	}
+	afterOut := getLine(t, ctx, tx, outID)
+	afterIn := getLine(t, ctx, tx, inID)
+	id, err := Record(ctx, tx, "transfer_link", "Linked transfer", []Change{
+		{Entity: EntityStatementLine, EntityID: outID, Before: beforeOut, After: afterOut},
+		{Entity: EntityStatementLine, EntityID: inID, Before: beforeIn, After: afterIn},
+		{Entity: EntityTransferLink, EntityID: link.ID, Before: nil, After: *link},
+	})
+	if err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	return id
+}
+
+// TestUndoTransferLink: undo of a manual link removes the link row and restores
+// both lines to their previous source; redo re-creates everything.
+func TestUndoTransferLink(t *testing.T) {
+	ctx := context.Background()
+	d, _ := newTestDB(t)
+	acc1 := insertAccount(t, ctx, d, "Main")
+	acc2 := insertAccount(t, ctx, d, "Savings")
+	out := insertLineOn(t, ctx, d, acc1, 1, "Overførsel ud", -50000, "2026-01-05")
+	in := insertLineOn(t, ctx, d, acc2, 2, "Overførsel ind", 50000, "2026-01-05")
+
+	linkID := recordManualLink(t, ctx, d, out, in)
+
+	if _, src := subcategoryOf(t, ctx, d, out); src != "transfer" {
+		t.Fatalf("out line source = %q, want transfer", src)
+	}
+
+	if _, err := Undo(ctx, d); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	if getLink(t, ctx, d, linkID) != nil {
+		t.Errorf("undo must delete the transfer_link row")
+	}
+	if _, src := subcategoryOf(t, ctx, d, out); src != "none" {
+		t.Errorf("undo must restore out line to none, got %q", src)
+	}
+	if _, src := subcategoryOf(t, ctx, d, in); src != "none" {
+		t.Errorf("undo must restore in line to none, got %q", src)
+	}
+
+	if _, err := Redo(ctx, d); err != nil {
+		t.Fatalf("Redo: %v", err)
+	}
+	link := getLink(t, ctx, d, linkID)
+	if link == nil || link.Method != "manual" || link.OutLineID != out || link.InLineID != in {
+		t.Errorf("redo must restore the link row, got %+v", link)
+	}
+	if _, src := subcategoryOf(t, ctx, d, out); src != "transfer" {
+		t.Errorf("redo must set out line back to transfer, got %q", src)
+	}
+}
+
+// TestUndoTransferUnlink: undo of an unlink re-creates the link, removes the
+// rejection row (composite key via synthetic entity_id, plan D10) and restores
+// both lines to source=transfer. Redo reverses it again.
+func TestUndoTransferUnlink(t *testing.T) {
+	ctx := context.Background()
+	d, _ := newTestDB(t)
+	acc1 := insertAccount(t, ctx, d, "Main")
+	acc2 := insertAccount(t, ctx, d, "Savings")
+	out := insertLineOn(t, ctx, d, acc1, 1, "Out", -50000, "2026-01-05")
+	in := insertLineOn(t, ctx, d, acc2, 2, "In", 50000, "2026-01-05")
+	linkID := recordManualLink(t, ctx, d, out, in)
+
+	// unlink: one undoable "transfer_unlink" action
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	q := dbq.New(tx)
+	linkBefore := getLink(t, ctx, tx, linkID)
+	lineOutBefore := getLine(t, ctx, tx, out)
+	lineInBefore := getLine(t, ctx, tx, in)
+	if err := q.DeleteTransferLink(ctx, linkID); err != nil {
+		t.Fatalf("DeleteTransferLink: %v", err)
+	}
+	rej := dbq.TransferRejection{OutLineID: out, InLineID: in, CreatedAt: "2026-01-06T00:00:00Z"}
+	if err := q.InsertTransferRejection(ctx, dbq.InsertTransferRejectionParams{OutLineID: out, InLineID: in}); err != nil {
+		t.Fatalf("InsertTransferRejection: %v", err)
+	}
+	if err := q.ClearLineTransfer(ctx, out); err != nil {
+		t.Fatalf("ClearLineTransfer out: %v", err)
+	}
+	if err := q.ClearLineTransfer(ctx, in); err != nil {
+		t.Fatalf("ClearLineTransfer in: %v", err)
+	}
+	lineOutAfter := getLine(t, ctx, tx, out)
+	lineInAfter := getLine(t, ctx, tx, in)
+	if _, err := Record(ctx, tx, "transfer_unlink", "Unlinked transfer", []Change{
+		{Entity: EntityStatementLine, EntityID: out, Before: lineOutBefore, After: lineOutAfter},
+		{Entity: EntityStatementLine, EntityID: in, Before: lineInBefore, After: lineInAfter},
+		{Entity: EntityTransferLink, EntityID: linkID, Before: *linkBefore, After: nil},
+		{Entity: EntityTransferRejection, EntityID: EncodeRejectionID(out, in), Before: nil, After: rej},
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if getLink(t, ctx, d, linkID) != nil {
+		t.Fatalf("unlink must delete the link")
+	}
+	if !rejectionExists(t, ctx, d, out, in) {
+		t.Fatalf("unlink must record the rejection pair")
+	}
+
+	// undo: link back, rejection gone, lines back to transfer
+	if _, err := Undo(ctx, d); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	link := getLink(t, ctx, d, linkID)
+	if link == nil || link.OutLineID != out || link.InLineID != in {
+		t.Errorf("undo must restore the link row, got %+v", link)
+	}
+	if rejectionExists(t, ctx, d, out, in) {
+		t.Errorf("undo must remove the rejection row")
+	}
+	if _, src := subcategoryOf(t, ctx, d, out); src != "transfer" {
+		t.Errorf("undo must restore out line to transfer, got %q", src)
+	}
+	if _, src := subcategoryOf(t, ctx, d, in); src != "transfer" {
+		t.Errorf("undo must restore in line to transfer, got %q", src)
+	}
+
+	// redo: link gone again, rejection back, lines none
+	if _, err := Redo(ctx, d); err != nil {
+		t.Fatalf("Redo: %v", err)
+	}
+	if getLink(t, ctx, d, linkID) != nil {
+		t.Errorf("redo must delete the link row")
+	}
+	if !rejectionExists(t, ctx, d, out, in) {
+		t.Errorf("redo must restore the rejection row")
+	}
+	if _, src := subcategoryOf(t, ctx, d, out); src != "none" {
+		t.Errorf("redo must set out line to none, got %q", src)
+	}
+}
+
+// TestTransferEntitiesSurviveReopen: snapshots are stored as JSON, so undo of a
+// transfer action works after the database is closed and reopened (UNDO-2).
+func TestTransferEntitiesSurviveReopen(t *testing.T) {
+	ctx := context.Background()
+	d, path := newTestDB(t)
+	acc1 := insertAccount(t, ctx, d, "Main")
+	acc2 := insertAccount(t, ctx, d, "Savings")
+	out := insertLineOn(t, ctx, d, acc1, 1, "Out", -100, "2026-01-05")
+	in := insertLineOn(t, ctx, d, acc2, 2, "In", 100, "2026-01-05")
+	recordManualLink(t, ctx, d, out, in)
+
+	// close and reopen the same database file
+	if err := d.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := db.InitDB(ctx, path); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	d2, err := db.GetDB()
+	if err != nil {
+		t.Fatalf("GetDB: %v", err)
+	}
+
+	if _, err := Undo(ctx, d2); err != nil {
+		t.Fatalf("Undo after reopen: %v", err)
+	}
+	if _, src := subcategoryOf(t, ctx, d2, out); src != "none" {
+		t.Errorf("undo after reopen must restore none, got %q", src)
+	}
+	links, err := dbq.New(d2).ListTransferLinks(ctx)
+	if err != nil || len(links) != 0 {
+		t.Errorf("undo after reopen must remove the link, got %v err=%v", links, err)
+	}
+}
+
+func TestEncodeDecodeRejectionID(t *testing.T) {
+	out, in := int64(123456), int64(789)
+	id := EncodeRejectionID(out, in)
+	gotOut, gotIn := DecodeRejectionID(id)
+	if gotOut != out || gotIn != in {
+		t.Fatalf("round trip failed: %d,%d -> %d -> %d,%d", out, in, id, gotOut, gotIn)
+	}
+}

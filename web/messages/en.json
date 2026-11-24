@@ -19,6 +19,7 @@
 	"nav": {
 		"statements": "Statements",
 		"categorize": "Categorize",
+		"transfers": "Transfers",
 		"rules": "Rules",
 		"visualize": "Visualize",
 		"import": "Import",
@@ -135,7 +136,10 @@
 		"undo": "Undo",
 		"undoConfirm": "Undo this import? Its lines are deleted and the batch is marked undone. A backup is taken first.",
 		"ruleCategorized": "Auto-categorized by rules",
-		"ruleConflicts": "Rule conflicts"
+		"ruleConflicts": "Rule conflicts",
+		"transferMatched": "Matched as transfers",
+		"transferAmbiguous": "Ambiguous transfer candidates",
+		"viewTransfers": "Review transfers"
 	},
 	"statements": {
 		"title": "Statements",
@@ -178,7 +182,8 @@
 		"rows": "rows",
 		"page": "Page",
 		"prev": "Previous",
-		"next": "Next"
+		"next": "Next",
+		"transfer": "Transfer"
 	},
 	"catz": {
 		"title": "Categorize",
@@ -199,7 +204,8 @@
 			"subcategory": "Subcategory",
 			"spread": "Spread (months)",
 			"bankRef": "Bank ref",
-			"counterparty": "Counterparty"
+			"counterparty": "Counterparty",
+			"transfer": "Transfer"
 		},
 		"palette": {
 			"title": "Subcategories",
@@ -218,7 +224,8 @@
 			"transfer": "Jump to transfer counterpart",
 			"spread": "Set spread…",
 			"reset": "Reset to rules",
-			"laterMilestone": "Available in a later milestone"
+			"laterMilestone": "Available in a later milestone",
+			"unlinkTransfer": "Unlink transfer"
 		},
 		"spreadDialog": {
 			"title": "Spread over months",
@@ -250,7 +257,8 @@
 			"nothingToUndo": "Nothing to undo",
 			"nothingToRedo": "Nothing to redo",
 			"error": "Action failed: {message}",
-			"conflictResolved": "Conflict resolved"
+			"conflictResolved": "Conflict resolved",
+			"transferUnlinked": "Transfer unlinked"
 		},
 		"filters": {
 			"message": "Message contains",
@@ -385,6 +393,37 @@
 		"categorizeManually": "Categorize manually",
 		"toasts": {
 			"resolved": "Conflict on line #{id} resolved"
+		}
+	},
+	"transfers": {
+		"title": "Transfers",
+		"subtitle": "Internal transfers between your own accounts, detected automatically.",
+		"runDetection": "Run detection now",
+		"linkedTitle": "Linked transfers",
+		"noLinks": "No transfers linked yet. Import statements for both accounts, or run detection now.",
+		"reviewTitle": "Review: ambiguous candidates",
+		"noReview": "No ambiguous candidates right now.",
+		"date": "Date",
+		"route": "Route",
+		"message": "Message",
+		"amount": "Amount",
+		"actions": "Actions",
+		"unlink": "Unlink",
+		"confirmUnlink": "Unlink this pair?",
+		"cancel": "Cancel",
+		"dismiss": "Dismiss",
+		"candidates": "Candidates",
+		"toasts": {
+			"detected": "Detection: {auto} auto-linked, {ambiguous} ambiguous",
+			"linked": "Transfer linked",
+			"unlinked": "Transfer unlinked",
+			"dismissed": "Candidate group dismissed",
+			"error": "Action failed: {message}"
+		},
+		"method": "Method",
+		"methodValue": {
+			"auto": "auto",
+			"manual": "manual"
 		}
 	}
 }

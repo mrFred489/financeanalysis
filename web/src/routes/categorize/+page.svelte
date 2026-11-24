@@ -17,7 +17,8 @@
 		resetLine,
 		resolveConflict,
 		setLineSpread,
-		undoAction
+		undoAction,
+		unlinkTransfer
 	} from '$lib/api';
 	import {
 		type CatzAction,
@@ -32,6 +33,7 @@
 	import { formatDate, formatMinor } from '$lib/format';
 	import { i18n } from '$lib/i18n';
 	import { locale } from '$lib/locale';
+	import { counterpartHref, transferLabel } from '$lib/transfers';
 	import {
 		type DatePreset,
 		type StatementFilters,
@@ -289,6 +291,27 @@
 			await resolveConflict(focusId, ruleId);
 			conflictOpen = false;
 			showToast($i18n.t('catz.toasts.conflictResolved'));
+			await fetchLines(filters);
+		} catch (err) {
+			showToast(
+				$i18n.t('catz.toasts.error', { message: err instanceof Error ? err.message : String(err) })
+			);
+		}
+	}
+
+	// M4 CATZ-7: jump to the transfer counterpart of the focused line.
+	function jumpToCounterpart() {
+		if (focused?.transferCounterpartId == null) return;
+		const href = counterpartHref(focused, $page.url.searchParams.toString());
+		if (href) void goto(href);
+	}
+
+	// M4 CATZ-7: unlink the focused line's transfer (TRF-6), then refetch.
+	async function doUnlinkTransfer() {
+		if (focused?.transferLinkId == null) return;
+		try {
+			await unlinkTransfer(focused.transferLinkId);
+			showToast($i18n.t('catz.toasts.transferUnlinked'));
 			await fetchLines(filters);
 		} catch (err) {
 			showToast(
@@ -755,6 +778,17 @@
 						</dd>
 						<dt class="text-gray-500">{$i18n.t('catz.detail.spread')}</dt>
 						<dd>{line.spreadMonths}</dd>
+						{#if line.transferCounterpartId != null}
+							<!-- M4 TRF-9: the link stays visible even when one side is manual (TRF-8) -->
+							<dt class="text-gray-500">{$i18n.t('catz.detail.transfer')}</dt>
+							<dd>
+								<a
+									href={counterpartHref(line, $page.url.searchParams.toString())}
+									class="text-blue-600 hover:underline"
+									data-transfer-link={line.transferLinkId}>{transferLabel(line)}</a
+								>
+							</dd>
+						{/if}
 					</dl>
 				</section>
 			{/if}
@@ -822,13 +856,23 @@
 						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
 						data-resolve-conflict>{$i18n.t('catz.actions.resolveConflict')}</button
 					>
-					<button
-						type="button"
-						disabled
-						title={$i18n.t('catz.actions.laterMilestone')}
-						class="px-2 py-1.5 rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
-						>{$i18n.t('catz.actions.transfer')}</button
-					>
+					{#if focused?.transferCounterpartId != null}
+						<!-- M4 CATZ-7: jump to the counterpart line of the linked transfer -->
+						<button
+							type="button"
+							onclick={jumpToCounterpart}
+							data-jump-counterpart
+							class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+							>{$i18n.t('catz.actions.transfer')} {transferLabel(focused)}</button
+						>
+						<button
+							type="button"
+							onclick={() => void doUnlinkTransfer()}
+							data-unlink-transfer
+							class="px-2 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+							>{$i18n.t('catz.actions.unlinkTransfer')}</button
+						>
+					{/if}
 					<button
 						type="button"
 						onclick={openSpread}

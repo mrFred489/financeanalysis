@@ -254,6 +254,16 @@
 					<dt class="text-gray-500">{$i18n.t('import.ruleConflicts')}</dt>
 					<dd class="font-medium text-red-700" data-rule-conflicts>{result.ruleConflicts}</dd>
 				</div>
+				<div>
+					<dt class="text-gray-500">{$i18n.t('import.transferMatched')}</dt>
+					<dd class="font-medium text-blue-700" data-transfer-matched>{result.transferMatched}</dd>
+				</div>
+				<div>
+					<dt class="text-gray-500">{$i18n.t('import.transferAmbiguous')}</dt>
+					<dd class="font-medium text-gray-700" data-transfer-ambiguous>
+						{result.transferAmbiguous}
+					</dd>
+				</div>
 			</dl>
 			<div class="flex gap-2">
 				<button
@@ -272,6 +282,11 @@
 					onclick={() => goto('/categorize?source=none')}
 					class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg shadow"
 					>{$i18n.t('import.categorizeNow')}</button
+				>
+				<a
+					href="/transfers"
+					class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg"
+					data-view-transfers>{$i18n.t('import.viewTransfers')}</a
 				>
 			</div>
 		</section>

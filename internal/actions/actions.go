@@ -34,7 +34,25 @@ const (
 	EntityStatementLine      = "statement_line"
 	EntityRule               = "rule"                // M3 (plan D12): snapshot includes accountIds
 	EntityConflictResolution = "conflict_resolution" // M3 (plan D7): keyed by line_id
+	EntityTransferLink       = "transfer_link"       // M4 (plan D10): keyed by id
+	EntityTransferRejection  = "transfer_rejection"  // M4 (plan D10): composite key, synthetic entity_id
 )
+
+// rejectionIDFactor encodes the composite key of a transfer_rejection row into
+// the single action_change.entity_id column (plan D10):
+// entity_id = out_line_id * rejectionIDFactor + in_line_id. Line ids are int64
+// and far below 10^8 in practice.
+const rejectionIDFactor = 100_000_000
+
+// EncodeRejectionID encodes a rejection pair into a synthetic entity id.
+func EncodeRejectionID(outLineID, inLineID int64) int64 {
+	return outLineID*rejectionIDFactor + inLineID
+}
+
+// DecodeRejectionID decodes a synthetic entity id back into the rejection pair.
+func DecodeRejectionID(entityID int64) (outLineID, inLineID int64) {
+	return entityID / rejectionIDFactor, entityID % rejectionIDFactor
+}
 
 // entityColumns whitelists the restorable columns per entity. Snapshots restore
 // only known columns; migrations must not drop/rename these columns
@@ -52,6 +70,14 @@ var entityColumns = map[string][]string{
 	EntityConflictResolution: {
 		"line_id", "rule_id", "created_at",
 	},
+	EntityTransferLink: {
+		"id", "out_line_id", "in_line_id", "method", "created_at",
+	},
+	// transfer_rejection has a composite PK; it is restored by a custom hook in
+	// applySnapshot (decode the synthetic entity_id), not by the generic upsert.
+	EntityTransferRejection: {
+		"out_line_id", "in_line_id", "created_at",
+	},
 }
 
 // entityKey is the column that identifies a row of the entity (its PK).
@@ -59,6 +85,7 @@ var entityKey = map[string]string{
 	EntityStatementLine:      "id",
 	EntityRule:               "id",
 	EntityConflictResolution: "line_id",
+	EntityTransferLink:       "id",
 }
 
 // Change is one affected row of an action. Before/After are full row structs
@@ -262,7 +289,15 @@ func actionWithChanges(row *dbq.ActionLog, changes []*dbq.ActionChange) *Action 
 // "accountIds" JSON array; after upserting the rule row, rule_account is
 // re-synced from it (delete + insert), because rule_account has no single id
 // column of its own.
+//
+// M4 custom hook (plan D10): "transfer_rejection" rows have a composite PK
+// (out_line_id, in_line_id), encoded into the single entity_id column as
+// out*rejectionIDFactor + in. There is no single key column to upsert by, so
+// the row is restored with delete + insert, keyed by the decoded pair.
 func applySnapshot(ctx context.Context, q dbq.DBTX, entity string, entityID int64, snapshot string) error {
+	if entity == EntityTransferRejection {
+		return applyRejectionSnapshot(ctx, q, entityID, snapshot)
+	}
 	columns, ok := entityColumns[entity]
 	if !ok {
 		return fmt.Errorf("unknown action entity %q", entity)
@@ -318,6 +353,39 @@ func applySnapshot(ctx context.Context, q dbq.DBTX, entity string, entityID int6
 		if err := resyncRuleAccounts(ctx, q, entityID, row["accountIds"]); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// applyRejectionSnapshot restores one transfer_rejection row from its snapshot.
+// A literal "null" snapshot means the row must not exist in this state, so the
+// pair is deleted. Otherwise the pair is deleted and re-inserted from the
+// snapshot (the composite key has no upsert target).
+func applyRejectionSnapshot(ctx context.Context, q dbq.DBTX, entityID int64, snapshot string) error {
+	outLineID, inLineID := DecodeRejectionID(entityID)
+	dec := json.NewDecoder(strings.NewReader(snapshot))
+	dec.UseNumber()
+	var row map[string]any
+	if err := dec.Decode(&row); err != nil {
+		return fmt.Errorf("decode %s snapshot for id %d: %w", EntityTransferRejection, entityID, err)
+	}
+	if row == nil {
+		if _, err := q.ExecContext(ctx, `DELETE FROM transfer_rejection WHERE out_line_id = ? AND in_line_id = ?`, outLineID, inLineID); err != nil {
+			return fmt.Errorf("delete transfer_rejection %d->%d: %w", outLineID, inLineID, err)
+		}
+		return nil
+	}
+	createdAt := ""
+	if v, ok := row["created_at"]; ok {
+		if s, ok := jsonValue(v).(string); ok {
+			createdAt = s
+		}
+	}
+	if _, err := q.ExecContext(ctx, `DELETE FROM transfer_rejection WHERE out_line_id = ? AND in_line_id = ?`, outLineID, inLineID); err != nil {
+		return fmt.Errorf("clear transfer_rejection %d->%d: %w", outLineID, inLineID, err)
+	}
+	if _, err := q.ExecContext(ctx, `INSERT INTO transfer_rejection (out_line_id, in_line_id, created_at) VALUES (?, ?, ?)`, outLineID, inLineID, createdAt); err != nil {
+		return fmt.Errorf("restore transfer_rejection %d->%d: %w", outLineID, inLineID, err)
 	}
 	return nil
 }

@@ -12,6 +12,7 @@
 	import { formatDate, formatMinor } from '$lib/format';
 	import { i18n } from '$lib/i18n';
 	import { locale } from '$lib/locale';
+	import { counterpartHref, transferLabel } from '$lib/transfers';
 	import {
 		type DatePreset,
 		type StatementFilters,
@@ -106,6 +107,12 @@
 		const sp = new URLSearchParams($page.url.searchParams.toString());
 		sp.set('focus', String(lineId));
 		return `/categorize?${sp.toString()}`;
+	}
+
+	// STMT-9 (M4): a linked line shows the transfer arrow + counterpart as a
+	// jump link to the counterpart on the categorize page.
+	function transferHref(line: (typeof data.lines)[number]): string | null {
+		return counterpartHref(line, $page.url.searchParams.toString());
 	}
 </script>
 
@@ -328,6 +335,7 @@
 					<th class="py-2 px-3">{$i18n.t('statements.category')}</th>
 					<th class="py-2 px-3">{$i18n.t('statements.subcategory')}</th>
 					<th class="py-2 px-3">{$i18n.t('statements.source')}</th>
+					<th class="py-2 px-3">{$i18n.t('statements.transfer')}</th>
 					<th class="py-2 px-3">{$i18n.t('statements.spread')}</th>
 				</tr>
 			</thead>
@@ -364,6 +372,15 @@
 								{/if}
 							</td>
 							<td class="py-1.5 px-3 text-gray-500">{line.source}</td>
+							<td class="py-1.5 px-3">
+								{#if transferLabel(line)}
+									<a
+										href={transferHref(line)}
+										class="text-blue-600 hover:underline"
+										data-transfer-link={line.transferLinkId}>{transferLabel(line)}</a
+									>
+								{/if}
+							</td>
 							<td class="py-1.5 px-3 text-gray-500"
 								>{line.spreadMonths > 1 ? line.spreadMonths : ''}</td
 							>
@@ -371,7 +388,7 @@
 					{/each}
 				{:else if !loading}
 					<tr
-						><td colspan="9" class="py-6 text-center text-gray-500"
+						><td colspan="10" class="py-6 text-center text-gray-500"
 							>{$i18n.t('statements.noLines')}</td
 						></tr
 					>
