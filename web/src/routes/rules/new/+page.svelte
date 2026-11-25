@@ -27,16 +27,15 @@
 		try {
 			[accounts, subcategories] = await Promise.all([listAccounts(), listSubcategories()]);
 			const fromLine = $page.url.searchParams.get('fromLine');
-			const fallbackSub = subcategories[0]?.id ?? 0;
 			if (fromLine) {
 				const line = await getLine(parseInt(fromLine, 10));
-				initial = prefillRuleFromLine(line, fallbackSub);
+				initial = prefillRuleFromLine(line);
 			} else {
 				initial = {
 					name: '',
 					pattern: '',
 					direction: 'both',
-					subcategoryId: fallbackSub,
+					subcategoryId: null,
 					accountIds: [],
 					enabled: true
 				};

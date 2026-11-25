@@ -56,12 +56,13 @@ describe('prefillRuleFromLine', () => {
 			amountMinor: -13597,
 			message: 'Køb i Netto, CITY N '
 		} as StatementLine;
-		const input = prefillRuleFromLine(line, 9);
+		const input = prefillRuleFromLine(line);
 		expect(input.pattern).toBe(escapeRegExp('Køb i Netto, CITY N'));
 		expect(input.accountIds).toEqual([3]);
 		expect(input.direction).toBe('out');
 		expect(input.name).toBe('Køb i Netto, CITY N');
-		expect(input.subcategoryId).toBe(9);
+		// no subcategory is preselected; the user must pick one manually
+		expect(input.subcategoryId).toBeNull();
 		expect(input.enabled).toBe(true);
 	});
 });

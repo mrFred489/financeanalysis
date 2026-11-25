@@ -9,6 +9,7 @@ export type CatzAction =
 	| { type: 'spread' }
 	| { type: 'reset' }
 	| { type: 'createRule' }
+	| { type: 'saveRule' }
 	| { type: 'undo' }
 	| { type: 'redo' }
 	| { type: 'focusFilter' }
@@ -70,6 +71,11 @@ export function mapKeyToAction(input: KeyMappingInput): CatzAction {
 		if (key === 'escape') return { type: 'closeOverlay' };
 		return { type: 'none' };
 	}
+
+	// Ctrl/Cmd+Enter creates the rule from the inline rule builder; ignored
+	// while an overlay is open. Inside the builder's inputs the form handles
+	// this key itself (the page-level handler skips events from input fields).
+	if (mod && key === 'enter') return { type: 'saveRule' };
 
 	switch (key) {
 		case 'arrowup':

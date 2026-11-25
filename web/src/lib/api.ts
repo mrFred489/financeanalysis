@@ -528,7 +528,8 @@ export interface RuleInput {
 	name: string;
 	pattern: string;
 	direction: RuleDirection;
-	subcategoryId: number;
+	/** null = not selected yet; the form requires a choice before saving */
+	subcategoryId: number | null;
 	accountIds: number[];
 	enabled: boolean;
 	/** set when previewing while editing, so the stored rule is replaced by this definition */

@@ -107,6 +107,30 @@ export function filtersToQueryString(f: StatementFilters): string {
 	return paramsFromFilters(f).toString();
 }
 
+// activeFilterCount counts how many filter fields differ from base (defaults).
+// Pagination and focus are navigation state, not filters, and are excluded.
+export function activeFilterCount(
+	f: StatementFilters,
+	base: StatementFilters = defaultFilters()
+): number {
+	let n = 0;
+	if (f.from !== base.from) n++;
+	if (f.to !== base.to) n++;
+	if (f.accounts.join(',') !== base.accounts.join(',')) n++;
+	if (f.direction !== base.direction) n++;
+	if (f.amountMin !== base.amountMin) n++;
+	if (f.amountMax !== base.amountMax) n++;
+	if (f.message !== base.message) n++;
+	if (f.categories.join(',') !== base.categories.join(',')) n++;
+	if (f.subcategories.join(',') !== base.subcategories.join(',')) n++;
+	if (f.source !== base.source) n++;
+	if (f.importId !== base.importId) n++;
+	if (f.spreadGt !== base.spreadGt) n++;
+	if (f.sort !== base.sort) n++;
+	if (f.order !== base.order) n++;
+	return n;
+}
+
 // Date-range presets for the filter bar (STMT-2).
 export type DatePreset = 'all' | 'last12m' | 'ytd' | 'prevYear' | 'custom';
 

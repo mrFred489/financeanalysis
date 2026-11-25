@@ -2,6 +2,7 @@
 	import {
 		type Account,
 		APIError,
+		type CategoryWithSubcategories,
 		type DiffResult,
 		type PreviewResult,
 		type Rule,
@@ -26,9 +27,29 @@
 		accounts: Account[];
 		onSaved: (rule: Rule) => void;
 		onCancel: () => void;
+		/** render without the card chrome, for embedding inside a page section */
+		embedded?: boolean;
+		/** when given, the subcategory select groups options by category */
+		categories?: CategoryWithSubcategories[];
+		/** reports whether any field diverges from `initial` (used to protect edits) */
+		onDirtyChange?: (dirty: boolean) => void;
+		submitLabel?: string;
+		cancelLabel?: string;
 	}
 
-	let { initial, ruleId, subcategories, accounts, onSaved, onCancel }: Props = $props();
+	let {
+		initial,
+		ruleId,
+		subcategories,
+		accounts,
+		onSaved,
+		onCancel,
+		embedded = false,
+		categories,
+		onDirtyChange,
+		submitLabel,
+		cancelLabel
+	}: Props = $props();
 
 	// The form intentionally captures the initial values only (the parent loads
 	// them once), hence untrack.
@@ -45,6 +66,36 @@
 	let diff = $state<DiffResult | null>(null);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
+	let formEl = $state<HTMLFormElement | null>(null);
+	let dirty = $state(false);
+
+	// Exposed via bind:this so a host page can submit the form (e.g. Ctrl+Enter
+	// on the categorize page's inline rule builder).
+	export function requestSubmit() {
+		formEl?.requestSubmit();
+	}
+
+	// Report dirty state (any field diverging from `initial`) to the host, so it
+	// can decide whether re-prefilling on focus change is safe.
+	$effect(() => {
+		void name;
+		void pattern;
+		void direction;
+		void subcategoryId;
+		void accountIds;
+		void enabled;
+		const d =
+			name !== initial.name ||
+			pattern !== initial.pattern ||
+			direction !== initial.direction ||
+			subcategoryId !== initial.subcategoryId ||
+			accountIds.join(',') !== initial.accountIds.join(',') ||
+			enabled !== initial.enabled;
+		if (d !== dirty) {
+			dirty = d;
+			onDirtyChange?.(d);
+		}
+	});
 
 	function currentInput(): RuleInput {
 		return {
@@ -104,8 +155,17 @@
 		accountIds = accountIds.includes(id) ? accountIds.filter((a) => a !== id) : [...accountIds, id];
 	}
 
+	// Ctrl/Cmd+Enter submits from inside a form field as well (the host page's
+	// global handler covers the case where focus is outside the form).
+	function onFieldKeydown(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+			e.preventDefault();
+			void submit();
+		}
+	}
+
 	async function submit() {
-		if (regexError || saving) return;
+		if (regexError || saving || subcategoryId === null) return;
 		saving = true;
 		error = null;
 		try {
@@ -127,6 +187,10 @@
 		| 'unaffectedTransfer'
 		| 'staysWithResolution';
 
+	// When embedded on the categorize page and a preview/diff is showing, the
+	// form fields and the preview sit side by side from the lg breakpoint up.
+	const sideBySide = $derived(embedded && (preview !== null || diff !== null));
+
 	const previewGroups: [string, PreviewGroupKey][] = [
 		['rules.preview.willCategorize', 'willCategorize'],
 		['rules.preview.alreadyThisRule', 'alreadyThisRule'],
@@ -138,180 +202,216 @@
 </script>
 
 <form
-	class="bg-white shadow rounded-xl p-6 border border-gray-100 space-y-4"
+	bind:this={formEl}
+	class={embedded ? 'space-y-4' : 'bg-white shadow rounded-xl p-6 border border-gray-100 space-y-4'}
 	onsubmit={(e) => {
 		e.preventDefault();
 		void submit();
 	}}
 >
-	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-		<label class="block">
-			<span class="text-xs text-gray-500">{$i18n.t('rules.form.name')}</span>
-			<input
-				type="text"
-				bind:value={name}
-				required
-				class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-			/>
-		</label>
-		<label class="block">
-			<span class="text-xs text-gray-500">{$i18n.t('rules.form.pattern')}</span>
-			<input
-				type="text"
-				bind:value={pattern}
-				required
-				spellcheck="false"
-				class="block w-full rounded-lg border-gray-300 shadow-sm font-mono text-sm focus:border-blue-500 focus:ring-blue-500"
-				placeholder={$i18n.t('rules.form.patternPlaceholder')}
-			/>
-		</label>
-		<label class="block">
-			<span class="text-xs text-gray-500">{$i18n.t('rules.form.direction')}</span>
-			<select
-				bind:value={direction}
-				class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-			>
-				<option value="both">{$i18n.t('rules.form.directionBoth')}</option>
-				<option value="in">{$i18n.t('rules.form.directionIn')}</option>
-				<option value="out">{$i18n.t('rules.form.directionOut')}</option>
-			</select>
-		</label>
-		<label class="block">
-			<span class="text-xs text-gray-500">{$i18n.t('rules.form.subcategory')}</span>
-			<select
-				bind:value={subcategoryId}
-				class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-			>
-				{#each subcategories as sub (sub.id)}
-					<option value={sub.id}>{sub.name}</option>
-				{/each}
-			</select>
-		</label>
-	</div>
+	<div
+		class={sideBySide
+			? 'space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0 items-start'
+			: 'space-y-4'}
+	>
+		<div class="space-y-4">
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+				<label class="block">
+					<span class="text-xs text-gray-500">{$i18n.t('rules.form.name')}</span>
+					<input
+						type="text"
+						bind:value={name}
+						required
+						onkeydown={onFieldKeydown}
+						class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+					/>
+				</label>
+				<label class="block">
+					<span class="text-xs text-gray-500">{$i18n.t('rules.form.pattern')}</span>
+					<input
+						type="text"
+						bind:value={pattern}
+						required
+						spellcheck="false"
+						onkeydown={onFieldKeydown}
+						class="block w-full rounded-lg border-gray-300 shadow-sm font-mono text-sm focus:border-blue-500 focus:ring-blue-500"
+						placeholder={$i18n.t('rules.form.patternPlaceholder')}
+					/>
+				</label>
+				<label class="block">
+					<span class="text-xs text-gray-500">{$i18n.t('rules.form.direction')}</span>
+					<select
+						bind:value={direction}
+						onkeydown={onFieldKeydown}
+						class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+					>
+						<option value="both">{$i18n.t('rules.form.directionBoth')}</option>
+						<option value="in">{$i18n.t('rules.form.directionIn')}</option>
+						<option value="out">{$i18n.t('rules.form.directionOut')}</option>
+					</select>
+				</label>
+				<label class="block">
+					<span class="text-xs text-gray-500">{$i18n.t('rules.form.subcategory')}</span>
+					<select
+						bind:value={subcategoryId}
+						onkeydown={onFieldKeydown}
+						class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+					>
+						<option value={null} disabled>{$i18n.t('rules.form.selectSubcategory')}</option>
+						{#if categories}
+							{#each categories as cat (cat.id)}
+								<optgroup label={cat.name}>
+									{#each cat.subcategories as sub (sub.id)}
+										<option value={sub.id}>{sub.name}</option>
+									{/each}
+								</optgroup>
+							{/each}
+						{:else}
+							{#each subcategories as sub (sub.id)}
+								<option value={sub.id}>{sub.name}</option>
+							{/each}
+						{/if}
+					</select>
+				</label>
+			</div>
 
-	<fieldset>
-		<legend class="text-xs text-gray-500 mb-1">{$i18n.t('rules.form.accounts')}</legend>
-		<span class="text-xs text-gray-400 mr-2">{$i18n.t('rules.form.accountsHint')}</span>
-		{#each accounts as acc (acc.id)}
-			<label class="mr-3 inline-flex items-center gap-1 text-sm">
-				<input
-					type="checkbox"
-					checked={accountIds.includes(acc.id)}
-					onchange={() => toggleAccount(acc.id)}
-				/>
-				{acc.name}
+			<fieldset>
+				<legend class="text-xs text-gray-500 mb-1">{$i18n.t('rules.form.accounts')}</legend>
+				<span class="text-xs text-gray-400 mr-2">{$i18n.t('rules.form.accountsHint')}</span>
+				{#each accounts as acc (acc.id)}
+					<label class="mr-3 inline-flex items-center gap-1 text-sm">
+						<input
+							type="checkbox"
+							checked={accountIds.includes(acc.id)}
+							onchange={() => toggleAccount(acc.id)}
+						/>
+						{acc.name}
+					</label>
+				{/each}
+			</fieldset>
+
+			<label class="inline-flex items-center gap-2 text-sm">
+				<input type="checkbox" bind:checked={enabled} />
+				{$i18n.t('rules.form.enabled')}
 			</label>
-		{/each}
-	</fieldset>
 
-	<label class="inline-flex items-center gap-2 text-sm">
-		<input type="checkbox" bind:checked={enabled} />
-		{$i18n.t('rules.form.enabled')}
-	</label>
-
-	{#if regexError}
-		<p
-			class="text-sm text-red-700 bg-red-50 border-l-4 border-red-500 px-3 py-2 rounded-r-lg"
-			data-regex-error
-		>
-			{$i18n.t('rules.form.invalidRegex')}: {regexError}
-		</p>
-	{/if}
-	{#if error}
-		<p class="text-sm text-red-700 bg-red-50 border-l-4 border-red-500 px-3 py-2 rounded-r-lg">
-			{error}
-		</p>
-	{/if}
-
-	<!-- Live preview (RULE-3) / edit diff (RULE-4) -->
-	{#if ruleId !== null}
-		<div class="flex items-center gap-2 text-sm">
-			<span class="text-xs text-gray-500">{$i18n.t('rules.preview.mode')}</span>
-			<button
-				type="button"
-				class="px-2 py-1 rounded-lg border text-xs {diffMode
-					? 'bg-white border-gray-300 text-gray-700'
-					: 'bg-purple-600 border-purple-600 text-white'}"
-				onclick={() => (diffMode = false)}
-				data-preview-mode>{$i18n.t('rules.preview.previewMode')}</button
-			>
-			<button
-				type="button"
-				class="px-2 py-1 rounded-lg border text-xs {diffMode
-					? 'bg-purple-600 border-purple-600 text-white'
-					: 'bg-white border-gray-300 text-gray-700'}"
-				onclick={() => (diffMode = true)}
-				data-diff-mode>{$i18n.t('rules.preview.diffMode')}</button
-			>
-		</div>
-	{/if}
-
-	{#if preview}
-		<section class="border border-gray-200 rounded-lg p-3 bg-gray-50 text-sm" data-preview-panel>
-			<h3 class="font-medium text-gray-900 mb-2">
-				{$i18n.t('rules.preview.title')} · {preview.totalMatches}
-				{$i18n.t('rules.preview.totalMatches')}
-			</h3>
-			<dl class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-				{#each previewGroups as [labelKey, key] (key)}
-					<div class="bg-white border border-gray-200 rounded-lg px-2 py-1.5">
-						<dt class="text-xs text-gray-500">{$i18n.t(labelKey)}</dt>
-						<dd class="font-medium" data-preview-group={key}>{preview[key].count}</dd>
-					</div>
-				{/each}
-			</dl>
-		</section>
-	{/if}
-
-	{#if diff}
-		<section class="border border-gray-200 rounded-lg p-3 bg-gray-50 text-sm" data-diff-panel>
-			<h3 class="font-medium text-gray-900 mb-2">{$i18n.t('rules.diff.title')}</h3>
-			<dl class="flex gap-4 text-sm mb-2">
-				<div>
-					<dt class="text-xs text-gray-500">{$i18n.t('rules.diff.added')}</dt>
-					<dd class="font-medium text-green-700" data-diff-added>{diff.added.length}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-gray-500">{$i18n.t('rules.diff.removed')}</dt>
-					<dd class="font-medium text-red-700" data-diff-removed>{diff.removed.length}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-gray-500">{$i18n.t('rules.diff.unchanged')}</dt>
-					<dd class="font-medium" data-diff-unchanged>{diff.unchanged.length}</dd>
-				</div>
-			</dl>
-			{#if diff.removedFuture.length > 0}
-				<p class="text-xs text-gray-500 mb-1">
-					{$i18n.t('rules.diff.removedFuture', {
-						shown: diff.removedFuture.length,
-						total: diff.removedFutureTotal
-					})}
+			{#if regexError}
+				<p
+					class="text-sm text-red-700 bg-red-50 border-l-4 border-red-500 px-3 py-2 rounded-r-lg"
+					data-regex-error
+				>
+					{$i18n.t('rules.form.invalidRegex')}: {regexError}
 				</p>
-				<ul class="text-xs text-gray-600 max-h-32 overflow-y-auto">
-					{#each diff.removedFuture as rf (rf.lineId)}
-						<li data-diff-future-line={rf.lineId}>
-							# {rf.lineId} → {$i18n.t(`rules.diff.future.${rf.future}`)}
-						</li>
-					{/each}
-				</ul>
 			{/if}
-		</section>
-	{/if}
+			{#if error}
+				<p class="text-sm text-red-700 bg-red-50 border-l-4 border-red-500 px-3 py-2 rounded-r-lg">
+					{error}
+				</p>
+			{/if}
+
+			<!-- Live preview (RULE-3) / edit diff (RULE-4) -->
+		</div>
+		<div class="space-y-4">
+			{#if ruleId !== null}
+				<div class="flex items-center gap-2 text-sm">
+					<span class="text-xs text-gray-500">{$i18n.t('rules.preview.mode')}</span>
+					<button
+						type="button"
+						class="px-2 py-1 rounded-lg border text-xs {diffMode
+							? 'bg-white border-gray-300 text-gray-700'
+							: 'bg-purple-600 border-purple-600 text-white'}"
+						onclick={() => (diffMode = false)}
+						data-preview-mode>{$i18n.t('rules.preview.previewMode')}</button
+					>
+					<button
+						type="button"
+						class="px-2 py-1 rounded-lg border text-xs {diffMode
+							? 'bg-purple-600 border-purple-600 text-white'
+							: 'bg-white border-gray-300 text-gray-700'}"
+						onclick={() => (diffMode = true)}
+						data-diff-mode>{$i18n.t('rules.preview.diffMode')}</button
+					>
+				</div>
+			{/if}
+
+			{#if preview}
+				<section
+					class="border border-gray-200 rounded-lg p-3 bg-gray-50 text-sm max-h-96 overflow-y-auto"
+					data-preview-panel
+				>
+					<h3 class="font-medium text-gray-900 mb-2">
+						{$i18n.t('rules.preview.title')} · {preview.totalMatches}
+						{$i18n.t('rules.preview.totalMatches')}
+					</h3>
+					<dl class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+						{#each previewGroups as [labelKey, key] (key)}
+							<div class="bg-white border border-gray-200 rounded-lg px-2 py-1.5">
+								<dt class="text-xs text-gray-500">{$i18n.t(labelKey)}</dt>
+								<dd class="font-medium" data-preview-group={key}>{preview[key].count}</dd>
+							</div>
+						{/each}
+					</dl>
+				</section>
+			{/if}
+
+			{#if diff}
+				<section
+					class="border border-gray-200 rounded-lg p-3 bg-gray-50 text-sm max-h-96 overflow-y-auto"
+					data-diff-panel
+				>
+					<h3 class="font-medium text-gray-900 mb-2">{$i18n.t('rules.diff.title')}</h3>
+					<dl class="flex gap-4 text-sm mb-2">
+						<div>
+							<dt class="text-xs text-gray-500">{$i18n.t('rules.diff.added')}</dt>
+							<dd class="font-medium text-green-700" data-diff-added>{diff.added.length}</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500">{$i18n.t('rules.diff.removed')}</dt>
+							<dd class="font-medium text-red-700" data-diff-removed>{diff.removed.length}</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-500">{$i18n.t('rules.diff.unchanged')}</dt>
+							<dd class="font-medium" data-diff-unchanged>{diff.unchanged.length}</dd>
+						</div>
+					</dl>
+					{#if diff.removedFuture.length > 0}
+						<p class="text-xs text-gray-500 mb-1">
+							{$i18n.t('rules.diff.removedFuture', {
+								shown: diff.removedFuture.length,
+								total: diff.removedFutureTotal
+							})}
+						</p>
+						<ul class="text-xs text-gray-600 max-h-32 overflow-y-auto">
+							{#each diff.removedFuture as rf (rf.lineId)}
+								<li data-diff-future-line={rf.lineId}>
+									# {rf.lineId} → {$i18n.t(`rules.diff.future.${rf.future}`)}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+			{/if}
+		</div>
+	</div>
 
 	<div class="flex justify-end gap-2">
 		<button
 			type="button"
 			onclick={onCancel}
 			class="px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
-			>{$i18n.t('rules.form.cancel')}</button
+			>{cancelLabel ?? $i18n.t('rules.form.cancel')}</button
 		>
 		<button
 			type="submit"
-			disabled={saving || regexError !== null || pattern.trim() === '' || name.trim() === ''}
+			disabled={saving ||
+				regexError !== null ||
+				pattern.trim() === '' ||
+				name.trim() === '' ||
+				subcategoryId === null}
 			class="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
 			data-save-rule
 		>
-			{saving ? $i18n.t('rules.form.saving') : $i18n.t('rules.form.save')}
+			{saving ? $i18n.t('rules.form.saving') : (submitLabel ?? $i18n.t('rules.form.save'))}
 		</button>
 	</div>
 </form>

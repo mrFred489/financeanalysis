@@ -9,12 +9,15 @@
 		bulkCategorize,
 		categorizeLine,
 		type ConflictEntry,
+		getLine,
 		listAccounts,
 		listCategories,
 		listConflicts,
 		listLines,
 		redoAction,
 		resetLine,
+		type Rule,
+		type RuleInput,
 		resolveConflict,
 		setLineSpread,
 		undoAction,
@@ -33,10 +36,13 @@
 	import { formatDate, formatMinor } from '$lib/format';
 	import { i18n } from '$lib/i18n';
 	import { locale } from '$lib/locale';
+	import RuleForm from '$lib/RuleForm.svelte';
+	import { prefillRuleFromLine } from '$lib/rules';
 	import { counterpartHref, transferLabel } from '$lib/transfers';
 	import {
 		type DatePreset,
 		type StatementFilters,
+		activeFilterCount,
 		defaultFilters,
 		filtersFromParams,
 		filtersToQueryString,
@@ -72,9 +78,20 @@
 	let conflictOpen = $state(false);
 	let conflictEntries = $state<ConflictEntry[]>([]);
 
+	// Inline rule builder (plan: rules as a section of this page): the form is
+	// prefilled from the focused line and remounts ({#key prefillKey}) whenever
+	// the prefill changes. ruleDirty protects user edits from being clobbered
+	// when focus moves.
+	let ruleInitial = $state<RuleInput | null>(null);
+	let prefillKey = $state(0);
+	let ruleDirty = $state(false);
+	let ruleFormRef = $state<RuleForm | null>(null);
+	let prefillSeq = 0;
+
 	let fetchKey: string | null = null;
 
 	const allSubcategories = $derived(categories.flatMap((c) => c.subcategories));
+	const paletteCats = $derived(categories.filter((c) => c.subcategories.length > 0));
 	const categoryName = (sub: { category_id: number }) =>
 		categories.find((c) => c.id === sub.category_id)?.name ?? '';
 	// hotkey -> subcategoryId; reserved keys can never be hotkeys (D7)
@@ -105,6 +122,14 @@
 	const pickerHighlight = $derived(pickerResults[Math.min(pickerIndex, pickerResults.length - 1)]);
 	const overlayOpen = $derived(pickerOpen || helpOpen || spreadOpen || conflictOpen);
 	const totalPages = $derived(data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1);
+	// Base for the active-filter count: on a bare /categorize URL the CATZ-1
+	// default (source=none,conflict) applies, so it is not "active".
+	const filterBase = $derived(
+		$page.url.searchParams.toString() === ''
+			? { ...defaultFilters(), source: 'none,conflict' }
+			: defaultFilters()
+	);
+	const activeFilters = $derived(activeFilterCount(filters, filterBase));
 
 	// Filter state lives in the URL (D5); refetch only when the filter part changes.
 	$effect(() => {
@@ -159,6 +184,44 @@
 		toast = msg;
 		clearTimeout(toastTimer);
 		toastTimer = setTimeout(() => (toast = null), 3500);
+	}
+
+	// --- inline rule builder ---
+
+	// prefillFromLine loads the rule form values from a line (M3 D9 prefill) and
+	// remounts the form. A sequence guard drops stale responses when focus moved
+	// on while the getLine request was in flight.
+	async function prefillFromLine(lineId: number) {
+		const seq = ++prefillSeq;
+		try {
+			const line = await getLine(lineId);
+			if (seq !== prefillSeq) return;
+			ruleInitial = prefillRuleFromLine(line);
+			ruleDirty = false;
+			prefillKey++;
+		} catch {
+			// prefill failure (e.g. line deleted): keep the current form values
+		}
+	}
+
+	// The builder follows the focused line while the user hasn't edited the
+	// form; once dirty, only an explicit `r` / "from this line" re-prefills.
+	$effect(() => {
+		const id = focusId;
+		const dirty = ruleDirty;
+		if (id !== null && !dirty && allSubcategories.length > 0) {
+			void prefillFromLine(id);
+		}
+	});
+
+	async function onRuleSaved(rule: Rule) {
+		showToast($i18n.t('catz.ruleBuilder.saved', { name: rule.name, count: rule.matchCount }));
+		await fetchLines(filters);
+		if (focusId !== null) await prefillFromLine(focusId);
+	}
+
+	function onRuleCancel() {
+		if (focusId !== null) void prefillFromLine(focusId);
 	}
 
 	// --- URL helpers ---
@@ -384,7 +447,11 @@
 				void doReset();
 				return;
 			case 'createRule':
-				if (focusId !== null) void goto(`/rules/new?fromLine=${focusId}`);
+				// fill the inline rule builder from the focused line (even if dirty)
+				if (focusId !== null) void prefillFromLine(focusId);
+				return;
+			case 'saveRule':
+				ruleFormRef?.requestSubmit();
 				return;
 			case 'undo':
 				void doUndo();
@@ -460,6 +527,7 @@
 		['Space', 'catz.shortcuts.picker'],
 		['s', 'catz.shortcuts.spread'],
 		['r', 'catz.shortcuts.createRule'],
+		['Ctrl+Enter', 'catz.shortcuts.saveRule'],
 		['Backspace', 'catz.shortcuts.reset'],
 		['Ctrl+Z', 'catz.shortcuts.undo'],
 		['Ctrl+Shift+Z', 'catz.shortcuts.redo'],
@@ -494,137 +562,320 @@
 		</div>
 	{/if}
 
-	<!-- Filter bar (CATZ-1: same filters as statements, state in the URL) -->
-	<section class="bg-white shadow rounded-xl p-4 border border-gray-100 space-y-3 text-sm">
-		<div class="flex flex-wrap gap-3 items-end">
-			<label class="block">
-				<span class="text-xs text-gray-500">{$i18n.t('catz.filters.preset')}</span>
-				<select
-					value={preset}
-					onchange={(e) => setPreset(e.currentTarget.value as DatePreset)}
-					class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-				>
-					<option value="all">{$i18n.t('catz.filters.presetAll')}</option>
-					<option value="last12m">{$i18n.t('catz.filters.presetLast12m')}</option>
-					<option value="ytd">{$i18n.t('catz.filters.presetYtd')}</option>
-					<option value="prevYear">{$i18n.t('catz.filters.presetPrevYear')}</option>
-					<option value="custom">{$i18n.t('catz.filters.presetCustom')}</option>
-				</select>
-			</label>
-			{#if preset === 'custom' || filters.from || filters.to}
-				<label class="block">
-					<span class="text-xs text-gray-500">{$i18n.t('catz.filters.from')}</span>
-					<input
-						type="date"
-						value={filters.from}
-						onchange={(e) => update({ from: e.currentTarget.value, page: 1 })}
-						class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-					/>
-				</label>
-				<label class="block">
-					<span class="text-xs text-gray-500">{$i18n.t('catz.filters.to')}</span>
-					<input
-						type="date"
-						value={filters.to}
-						onchange={(e) => update({ to: e.currentTarget.value, page: 1 })}
-						class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-					/>
-				</label>
-			{/if}
-			<label class="block">
-				<span class="text-xs text-gray-500">{$i18n.t('catz.filters.direction')}</span>
-				<select
-					value={filters.direction}
-					onchange={(e) => update({ direction: e.currentTarget.value as '' | 'in' | 'out' })}
-					class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-				>
-					<option value="">{$i18n.t('catz.filters.both')}</option>
-					<option value="in">{$i18n.t('catz.filters.in')}</option>
-					<option value="out">{$i18n.t('catz.filters.out')}</option>
-				</select>
-			</label>
-			<label class="block">
-				<span class="text-xs text-gray-500">{$i18n.t('catz.filters.message')}</span>
-				<input
-					bind:this={messageInput}
-					type="text"
-					value={filters.message}
-					onchange={(e) => update({ message: e.currentTarget.value })}
-					class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-				/>
-			</label>
-			<label class="block">
-				<span class="text-xs text-gray-500">{$i18n.t('catz.filters.source')}</span>
-				<select
-					value={filters.source}
-					onchange={(e) => update({ source: e.currentTarget.value })}
-					class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-				>
-					<option value="">{$i18n.t('catz.filters.all')}</option>
-					{#each ['none', 'conflict', 'rule', 'manual', 'transfer'] as s}
-						<option value={s}>{s}</option>
-					{/each}
-				</select>
-			</label>
+	<!-- Categorization controls on top: subcategory palette + actions (CATZ-3/7) -->
+	<section data-controls class="bg-white shadow rounded-xl p-4 border border-gray-100 space-y-3">
+		<div>
+			<h2 class="font-semibold text-gray-900 text-sm">{$i18n.t('catz.palette.title')}</h2>
+			<p class="text-xs text-gray-500 mb-2">{$i18n.t('catz.palette.hint')}</p>
+			<!-- One column per category (with its headline); the columns
+			     automatically fill the available horizontal space. -->
+			<div class="palette-grid" style="--cols: {Math.max(1, paletteCats.length)}" data-palette-grid>
+				{#each paletteCats as cat (cat.id)}
+					<div class="min-w-0">
+						<div class="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
+							<span class="inline-block w-2 h-2 rounded-full" style="background-color: {cat.color}"
+							></span>{cat.name}
+						</div>
+						<!-- Chips flow horizontally and fill the column width, wrapping
+						     to another line only when they don't fit. -->
+						<div class="flex flex-wrap content-start gap-1">
+							{#each cat.subcategories as sub (sub.id)}
+								<button
+									type="button"
+									onclick={() => void assign(sub.id)}
+									class="px-2 py-1 rounded-lg border border-gray-200 text-xs flex items-center gap-1 hover:bg-gray-50"
+									title={sub.name}
+									data-subcategory-id={sub.id}
+								>
+									<span
+										class="inline-block w-2 h-2 rounded-full"
+										style="background-color: {sub.color}"
+									></span>
+									<span>{sub.name}</span>
+									{#if sub.hotkey && !isReservedKey(sub.hotkey)}
+										<kbd
+											class="ml-1 px-1 rounded bg-gray-100 border border-gray-200 font-mono text-[10px]"
+											>{sub.hotkey}</kbd
+										>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			</div>
 		</div>
-		<details class="text-sm">
-			<summary class="cursor-pointer text-gray-600 hover:text-gray-900"
-				>{$i18n.t('catz.filters.moreFilters')}</summary
+		<div class="border-t border-gray-100 pt-3">
+			<h2 class="font-semibold text-gray-900 text-sm mb-2">{$i18n.t('catz.actions.title')}</h2>
+			<div class="flex flex-wrap gap-2 text-sm">
+				<button
+					type="button"
+					onclick={() => {
+						if (focusId !== null) void prefillFromLine(focusId);
+					}}
+					disabled={focusId === null}
+					title="r"
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+					data-create-rule>{$i18n.t('catz.actions.createRule')}</button
+				>
+				<button
+					type="button"
+					onclick={openPicker}
+					disabled={focusId === null}
+					title="Space"
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+					data-open-picker>{$i18n.t('catz.actions.openPicker')}</button
+				>
+				<button
+					type="button"
+					onclick={() => void openConflictPanel()}
+					disabled={focused?.source !== 'conflict'}
+					title={$i18n.t('catz.actions.resolveConflict')}
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+					data-resolve-conflict>{$i18n.t('catz.actions.resolveConflict')}</button
+				>
+				{#if focused?.transferCounterpartId != null}
+					<!-- M4 CATZ-7: jump to the counterpart line of the linked transfer -->
+					<button
+						type="button"
+						onclick={jumpToCounterpart}
+						data-jump-counterpart
+						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+						>{$i18n.t('catz.actions.transfer')} {transferLabel(focused)}</button
+					>
+					<button
+						type="button"
+						onclick={() => void doUnlinkTransfer()}
+						data-unlink-transfer
+						class="px-2 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+						>{$i18n.t('catz.actions.unlinkTransfer')}</button
+					>
+				{/if}
+				<button
+					type="button"
+					onclick={openSpread}
+					disabled={focusId === null}
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+					>{$i18n.t('catz.actions.spread')}</button
+				>
+				<button
+					type="button"
+					onclick={() => void doReset()}
+					disabled={focusId === null}
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+					>{$i18n.t('catz.actions.reset')}</button
+				>
+				<button
+					type="button"
+					onclick={() => void doUndo()}
+					title="Ctrl+Z"
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+					data-undo>{$i18n.t('catz.actions.undo')}</button
+				>
+				<button
+					type="button"
+					onclick={() => void doRedo()}
+					title="Ctrl+Shift+Z"
+					class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+					data-redo>{$i18n.t('catz.actions.redo')}</button
+				>
+			</div>
+		</div>
+	</section>
+
+	<!-- Inline rule builder: the rule form lives on this page. It follows the
+	     focused line while untouched; Ctrl+Enter creates the rule (M3). -->
+	<section
+		data-rule-builder
+		class="bg-white shadow rounded-xl p-4 border border-gray-100 space-y-3"
+	>
+		<div class="flex items-start justify-between gap-4">
+			<div class="min-w-0">
+				<h2 class="font-semibold text-gray-900 text-sm">{$i18n.t('catz.ruleBuilder.title')}</h2>
+				<p class="text-xs text-gray-500 truncate" data-rule-builder-line>
+					{#if focused}
+						{$i18n.t('catz.ruleBuilder.line', {
+							date: formatDate(focused.bookingDate, $locale),
+							account: focused.accountName,
+							amount: formatMinor(focused.amountMinor, $locale),
+							message: focused.message
+						})}
+					{:else}
+						{$i18n.t('catz.ruleBuilder.noLine')}
+					{/if}
+				</p>
+			</div>
+			<a href="/rules" class="text-sm text-purple-600 hover:underline shrink-0" data-all-rules
+				>{$i18n.t('catz.ruleBuilder.allRules')}</a
 			>
-			<div class="flex flex-wrap gap-4 mt-2">
-				<fieldset>
-					<legend class="text-xs text-gray-500">{$i18n.t('catz.filters.accounts')}</legend>
-					{#each accounts as acc}
-						<label class="mr-3 inline-flex items-center gap-1">
+		</div>
+		<p class="text-xs text-gray-400">{$i18n.t('catz.ruleBuilder.hint')}</p>
+		{#key prefillKey}
+			{#if ruleInitial}
+				<RuleForm
+					bind:this={ruleFormRef}
+					initial={ruleInitial}
+					ruleId={null}
+					subcategories={allSubcategories}
+					{categories}
+					{accounts}
+					embedded
+					onDirtyChange={(d) => (ruleDirty = d)}
+					onSaved={(rule) => void onRuleSaved(rule)}
+					onCancel={onRuleCancel}
+					submitLabel={$i18n.t('catz.ruleBuilder.create')}
+					cancelLabel={$i18n.t('catz.ruleBuilder.reset')}
+				/>
+			{/if}
+		{/key}
+	</section>
+
+	<!-- Filter bar (CATZ-1: same filters as statements, state in the URL).
+	     Collapsed unless non-default filters are active. -->
+	<section class="bg-white shadow rounded-xl p-4 border border-gray-100 text-sm">
+		<details open={activeFilters > 0}>
+			<summary class="cursor-pointer text-gray-600 hover:text-gray-900" data-filters-summary>
+				{activeFilters > 0
+					? $i18n.t('catz.filters.summary', { count: activeFilters })
+					: $i18n.t('catz.filters.summaryNone')}
+			</summary>
+			<div class="space-y-3 mt-3">
+				<div class="flex flex-wrap gap-3 items-end">
+					<label class="block">
+						<span class="text-xs text-gray-500">{$i18n.t('catz.filters.preset')}</span>
+						<select
+							value={preset}
+							onchange={(e) => setPreset(e.currentTarget.value as DatePreset)}
+							class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+						>
+							<option value="all">{$i18n.t('catz.filters.presetAll')}</option>
+							<option value="last12m">{$i18n.t('catz.filters.presetLast12m')}</option>
+							<option value="ytd">{$i18n.t('catz.filters.presetYtd')}</option>
+							<option value="prevYear">{$i18n.t('catz.filters.presetPrevYear')}</option>
+							<option value="custom">{$i18n.t('catz.filters.presetCustom')}</option>
+						</select>
+					</label>
+					{#if preset === 'custom' || filters.from || filters.to}
+						<label class="block">
+							<span class="text-xs text-gray-500">{$i18n.t('catz.filters.from')}</span>
 							<input
-								type="checkbox"
-								checked={filters.accounts.includes(acc.id)}
-								onchange={() => update({ accounts: toggleId(filters.accounts, acc.id) })}
+								type="date"
+								value={filters.from}
+								onchange={(e) => update({ from: e.currentTarget.value, page: 1 })}
+								class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
 							/>
-							{acc.name}
 						</label>
-					{/each}
-				</fieldset>
-				<fieldset>
-					<legend class="text-xs text-gray-500">{$i18n.t('catz.filters.categories')}</legend>
-					{#each categories as c}
-						<label class="mr-3 inline-flex items-center gap-1">
+						<label class="block">
+							<span class="text-xs text-gray-500">{$i18n.t('catz.filters.to')}</span>
 							<input
-								type="checkbox"
-								checked={filters.categories.includes(c.id)}
-								onchange={() => update({ categories: toggleId(filters.categories, c.id) })}
+								type="date"
+								value={filters.to}
+								onchange={(e) => update({ to: e.currentTarget.value, page: 1 })}
+								class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
 							/>
-							<span class="inline-block w-2 h-2 rounded-full" style="background-color: {c.color}"
-							></span>
-							{c.name}
 						</label>
-					{/each}
-				</fieldset>
-				<fieldset>
-					<legend class="text-xs text-gray-500">{$i18n.t('catz.filters.subcategories')}</legend>
-					{#each allSubcategories as sub}
-						<label class="mr-3 inline-flex items-center gap-1">
+					{/if}
+					<label class="block">
+						<span class="text-xs text-gray-500">{$i18n.t('catz.filters.direction')}</span>
+						<select
+							value={filters.direction}
+							onchange={(e) => update({ direction: e.currentTarget.value as '' | 'in' | 'out' })}
+							class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+						>
+							<option value="">{$i18n.t('catz.filters.both')}</option>
+							<option value="in">{$i18n.t('catz.filters.in')}</option>
+							<option value="out">{$i18n.t('catz.filters.out')}</option>
+						</select>
+					</label>
+					<label class="block">
+						<span class="text-xs text-gray-500">{$i18n.t('catz.filters.message')}</span>
+						<input
+							bind:this={messageInput}
+							type="text"
+							value={filters.message}
+							onchange={(e) => update({ message: e.currentTarget.value })}
+							class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+						/>
+					</label>
+					<label class="block">
+						<span class="text-xs text-gray-500">{$i18n.t('catz.filters.source')}</span>
+						<select
+							value={filters.source}
+							onchange={(e) => update({ source: e.currentTarget.value })}
+							class="block rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+						>
+							<option value="">{$i18n.t('catz.filters.all')}</option>
+							{#each ['none', 'conflict', 'rule', 'manual', 'transfer'] as s}
+								<option value={s}>{s}</option>
+							{/each}
+						</select>
+					</label>
+				</div>
+				<details class="text-sm">
+					<summary class="cursor-pointer text-gray-600 hover:text-gray-900"
+						>{$i18n.t('catz.filters.moreFilters')}</summary
+					>
+					<div class="flex flex-wrap gap-4 mt-2">
+						<fieldset>
+							<legend class="text-xs text-gray-500">{$i18n.t('catz.filters.accounts')}</legend>
+							{#each accounts as acc}
+								<label class="mr-3 inline-flex items-center gap-1">
+									<input
+										type="checkbox"
+										checked={filters.accounts.includes(acc.id)}
+										onchange={() => update({ accounts: toggleId(filters.accounts, acc.id) })}
+									/>
+									{acc.name}
+								</label>
+							{/each}
+						</fieldset>
+						<fieldset>
+							<legend class="text-xs text-gray-500">{$i18n.t('catz.filters.categories')}</legend>
+							{#each categories as c}
+								<label class="mr-3 inline-flex items-center gap-1">
+									<input
+										type="checkbox"
+										checked={filters.categories.includes(c.id)}
+										onchange={() => update({ categories: toggleId(filters.categories, c.id) })}
+									/>
+									<span
+										class="inline-block w-2 h-2 rounded-full"
+										style="background-color: {c.color}"
+									></span>
+									{c.name}
+								</label>
+							{/each}
+						</fieldset>
+						<fieldset>
+							<legend class="text-xs text-gray-500">{$i18n.t('catz.filters.subcategories')}</legend>
+							{#each allSubcategories as sub}
+								<label class="mr-3 inline-flex items-center gap-1">
+									<input
+										type="checkbox"
+										checked={filters.subcategories.includes(sub.id)}
+										onchange={() =>
+											update({ subcategories: toggleId(filters.subcategories, sub.id) })}
+									/>
+									<span
+										class="inline-block w-2 h-2 rounded-full"
+										style="background-color: {sub.color}"
+									></span>
+									{sub.name}
+								</label>
+							{/each}
+						</fieldset>
+						<label class="block">
+							<span class="text-xs text-gray-500">{$i18n.t('catz.filters.spreadGt')}</span>
 							<input
-								type="checkbox"
-								checked={filters.subcategories.includes(sub.id)}
-								onchange={() => update({ subcategories: toggleId(filters.subcategories, sub.id) })}
+								type="number"
+								min="1"
+								value={filters.spreadGt}
+								onchange={(e) => update({ spreadGt: e.currentTarget.value })}
+								class="block w-20 rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
 							/>
-							<span class="inline-block w-2 h-2 rounded-full" style="background-color: {sub.color}"
-							></span>
-							{sub.name}
 						</label>
-					{/each}
-				</fieldset>
-				<label class="block">
-					<span class="text-xs text-gray-500">{$i18n.t('catz.filters.spreadGt')}</span>
-					<input
-						type="number"
-						min="1"
-						value={filters.spreadGt}
-						onchange={(e) => update({ spreadGt: e.currentTarget.value })}
-						class="block w-20 rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-					/>
-				</label>
+					</div>
+				</details>
 			</div>
 		</details>
 	</section>
@@ -728,7 +979,7 @@
 			{/if}
 		</section>
 
-		<!-- Detail pane + palette + actions (CATZ-2/3/7) -->
+		<!-- Detail pane (CATZ-2); palette + actions moved to the top controls -->
 		<div class="space-y-4">
 			{#if focused}
 				{@const line = focused}
@@ -792,103 +1043,6 @@
 					</dl>
 				</section>
 			{/if}
-
-			<!-- Subcategory palette (CATZ-3) -->
-			<section class="bg-white shadow rounded-xl p-4 border border-gray-100">
-				<h2 class="font-semibold text-gray-900 text-sm">{$i18n.t('catz.palette.title')}</h2>
-				<p class="text-xs text-gray-500 mb-2">{$i18n.t('catz.palette.hint')}</p>
-				{#each categories as cat}
-					{#if cat.subcategories.length}
-						<div class="mb-2">
-							<div class="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
-								<span
-									class="inline-block w-2 h-2 rounded-full"
-									style="background-color: {cat.color}"
-								></span>{cat.name}
-							</div>
-							<div class="flex flex-wrap gap-1">
-								{#each cat.subcategories as sub}
-									<button
-										type="button"
-										onclick={() => void assign(sub.id)}
-										class="px-2 py-1 rounded-lg border border-gray-200 text-xs flex items-center gap-1 hover:bg-gray-50"
-										title={sub.name}
-										data-subcategory-id={sub.id}
-									>
-										<span
-											class="inline-block w-2 h-2 rounded-full"
-											style="background-color: {sub.color}"
-										></span>
-										<span>{sub.name}</span>
-										{#if sub.hotkey && !isReservedKey(sub.hotkey)}
-											<kbd
-												class="ml-1 px-1 rounded bg-gray-100 border border-gray-200 font-mono text-[10px]"
-												>{sub.hotkey}</kbd
-											>
-										{/if}
-									</button>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				{/each}
-			</section>
-
-			<!-- Actions on the focused line (CATZ-7) -->
-			<section class="bg-white shadow rounded-xl p-4 border border-gray-100">
-				<h2 class="font-semibold text-gray-900 text-sm mb-2">{$i18n.t('catz.actions.title')}</h2>
-				<div class="flex flex-wrap gap-2 text-sm">
-					<button
-						type="button"
-						onclick={() => {
-							if (focusId !== null) void goto(`/rules/new?fromLine=${focusId}`);
-						}}
-						disabled={focusId === null}
-						title="r"
-						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-						data-create-rule>{$i18n.t('catz.actions.createRule')}</button
-					>
-					<button
-						type="button"
-						onclick={() => void openConflictPanel()}
-						disabled={focused?.source !== 'conflict'}
-						title={$i18n.t('catz.actions.resolveConflict')}
-						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-						data-resolve-conflict>{$i18n.t('catz.actions.resolveConflict')}</button
-					>
-					{#if focused?.transferCounterpartId != null}
-						<!-- M4 CATZ-7: jump to the counterpart line of the linked transfer -->
-						<button
-							type="button"
-							onclick={jumpToCounterpart}
-							data-jump-counterpart
-							class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
-							>{$i18n.t('catz.actions.transfer')} {transferLabel(focused)}</button
-						>
-						<button
-							type="button"
-							onclick={() => void doUnlinkTransfer()}
-							data-unlink-transfer
-							class="px-2 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
-							>{$i18n.t('catz.actions.unlinkTransfer')}</button
-						>
-					{/if}
-					<button
-						type="button"
-						onclick={openSpread}
-						disabled={focusId === null}
-						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-						>{$i18n.t('catz.actions.spread')}</button
-					>
-					<button
-						type="button"
-						onclick={() => void doReset()}
-						disabled={focusId === null}
-						class="px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-						>{$i18n.t('catz.actions.reset')}</button
-					>
-				</div>
-			</section>
 		</div>
 	</div>
 
@@ -1097,3 +1251,19 @@
 		{toast}
 	</div>
 {/if}
+
+<style>
+	/* Palette: one 1fr column per category with subcategories, so the columns
+	   automatically fill the available horizontal space. Single column on
+	   narrow screens. */
+	.palette-grid {
+		display: grid;
+		grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+	@media (max-width: 639px) {
+		.palette-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

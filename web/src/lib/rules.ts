@@ -27,13 +27,14 @@ export function suggestRuleName(message: string): string {
 
 // prefillRuleFromLine builds the prefilled rule form values for "create rule
 // from this line" (RULE-1, plan D9): escaped message, the line's account,
-// direction from the amount sign, suggested name.
-export function prefillRuleFromLine(line: StatementLine, subcategoryId: number): RuleInput {
+// direction from the amount sign, suggested name. No target subcategory is
+// preselected — the user picks one manually for every rule.
+export function prefillRuleFromLine(line: StatementLine): RuleInput {
 	return {
 		name: suggestRuleName(line.message),
 		pattern: escapeRegExp(line.message.trim()),
 		direction: directionFromAmount(line.amountMinor),
-		subcategoryId,
+		subcategoryId: null,
 		accountIds: [line.accountId],
 		enabled: true
 	};

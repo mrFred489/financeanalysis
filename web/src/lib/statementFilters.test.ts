@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	activeFilterCount,
 	defaultFilters,
 	filtersFromParams,
 	filtersToQueryString,
@@ -102,5 +103,35 @@ describe('focus param (STMT-6 deep links)', () => {
 
 		expect(paramsFromFilters(defaultFilters()).get('focus')).toBe(null);
 		expect(filtersFromParams(new URLSearchParams()).focus).toBe('');
+	});
+});
+
+describe('activeFilterCount', () => {
+	it('is 0 for the defaults', () => {
+		expect(activeFilterCount(defaultFilters())).toBe(0);
+	});
+
+	it('counts each differing filter field, ignoring page/pageSize/focus', () => {
+		const f = defaultFilters();
+		f.page = 3;
+		f.pageSize = 100;
+		f.focus = '42';
+		expect(activeFilterCount(f)).toBe(0);
+
+		f.source = 'none,conflict';
+		f.message = 'Netto';
+		f.accounts = [1, 2];
+		f.direction = 'out';
+		f.sort = 'amount';
+		f.order = 'asc';
+		expect(activeFilterCount(f)).toBe(6);
+	});
+
+	it('honours a custom base (categorize page default source)', () => {
+		const base = { ...defaultFilters(), source: 'none,conflict' };
+		const f = { ...defaultFilters(), source: 'none,conflict' };
+		expect(activeFilterCount(f, base)).toBe(0);
+		f.source = 'rule';
+		expect(activeFilterCount(f, base)).toBe(1);
 	});
 });

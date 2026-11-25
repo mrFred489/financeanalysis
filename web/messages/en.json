@@ -240,13 +240,16 @@
 		},
 		"actions": {
 			"title": "Actions",
-			"createRule": "Create rule from this line",
+			"createRule": "Fill rule from this line",
 			"resolveConflict": "Resolve conflict",
 			"transfer": "Jump to transfer counterpart",
 			"spread": "Set spread…",
 			"reset": "Reset to rules",
 			"laterMilestone": "Available in a later milestone",
-			"unlinkTransfer": "Unlink transfer"
+			"unlinkTransfer": "Unlink transfer",
+			"openPicker": "Pick subcategory…",
+			"undo": "Undo",
+			"redo": "Redo"
 		},
 		"spreadDialog": {
 			"title": "Spread over months",
@@ -268,9 +271,10 @@
 			"help": "This help",
 			"multiselect": "Extend selection",
 			"close": "Close dialog",
-			"createRule": "Create rule from this line"
+			"createRule": "Fill rule form from the focused line",
+			"saveRule": "Create rule from the rule form"
 		},
-		"hintBar": "↑/↓ move · hotkey assigns · space picker · s spread · ⌫ reset · ctrl+z undo · ? help",
+		"hintBar": "↑/↓ move · hotkey assigns · space picker · r rule from line · ctrl+enter create rule · s spread · ⌫ reset · ctrl+z undo · ? help",
 		"toasts": {
 			"assigned": "Assigned {subcategory} to {count} line(s)",
 			"undone": "Undone: {description}",
@@ -301,7 +305,9 @@
 			"presetPrevYear": "Previous year",
 			"presetCustom": "Custom",
 			"from": "From",
-			"to": "To"
+			"to": "To",
+			"summary": "Filters ({count} active)",
+			"summaryNone": "Filters"
 		},
 		"list": {
 			"date": "Date",
@@ -322,6 +328,16 @@
 			"title": "Resolve conflict",
 			"allConflicts": "All conflicts",
 			"close": "Close"
+		},
+		"ruleBuilder": {
+			"title": "Rule builder",
+			"hint": "Edit the pattern, pick a target subcategory, then Ctrl+Enter creates the rule and applies it to matching lines.",
+			"line": "Line: {date} · {account} · {amount} · {message}",
+			"noLine": "Focus a line to prefill the rule form.",
+			"allRules": "All rules →",
+			"saved": "Rule “{name}” created — {count} line(s) categorized",
+			"create": "Create rule (Ctrl+Enter)",
+			"reset": "Reset"
 		}
 	},
 	"rules": {
@@ -365,6 +381,7 @@
 			"directionIn": "Incoming (amount > 0)",
 			"directionOut": "Outgoing (amount < 0)",
 			"subcategory": "Target subcategory",
+			"selectSubcategory": "Select subcategory…",
 			"accounts": "Accounts",
 			"accountsHint": "(none selected = all accounts)",
 			"enabled": "Enabled",

@@ -108,6 +108,17 @@ describe('mapKeyToAction', () => {
 		});
 	});
 
+	it('maps Ctrl/Cmd+Enter to saveRule (inline rule builder)', () => {
+		expect(mapKeyToAction(input({ key: 'Enter', ctrlKey: true }))).toEqual({ type: 'saveRule' });
+		expect(mapKeyToAction(input({ key: 'Enter', metaKey: true }))).toEqual({ type: 'saveRule' });
+	});
+
+	it('saveRule is ignored while an overlay is open', () => {
+		expect(mapKeyToAction(input({ key: 'Enter', ctrlKey: true, overlayOpen: true }))).toEqual({
+			type: 'none'
+		});
+	});
+
 	it('returns none for unmapped keys', () => {
 		expect(mapKeyToAction(input({ key: 'x' }))).toEqual({ type: 'none' });
 		expect(mapKeyToAction(input({ key: 'Enter' }))).toEqual({ type: 'none' });

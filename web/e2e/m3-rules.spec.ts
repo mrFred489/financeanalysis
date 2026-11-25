@@ -170,18 +170,22 @@ test('M3 rules flow: preview, save, diff, conflict, resolve, undo, from-line, im
 	lines = await listLines('pageSize=100');
 	expect(lines.find((l) => l.id === nettoId)?.source).toBe('conflict');
 
-	// 5. "Create rule from this line" (r hotkey, RULE-1/D9): focus Kontanthævning
+	// 5. "Fill rule from this line" (r hotkey, RULE-1/D9): focus Kontanthævning.
+	//    The rule builder is inline on /categorize now (M6 plan); the page does
+	//    not navigate away, Ctrl+Enter creates the rule in place.
 	const kontId = lineIds[2];
 	await page.goto(`/categorize?focus=${kontId}&source=none,conflict`);
 	await expect(page.locator('tbody tr').first()).toBeVisible(); // wait for hydration
+	const builder = page.locator('[data-rule-builder]');
+	await expect(builder).toBeVisible();
 	await page.keyboard.press('r');
-	await expect(page).toHaveURL(/\/rules\/new\?fromLine=/);
+	await expect(page).toHaveURL(/\/categorize/);
 	// prefilled: escaped message pattern + account + direction out
-	await expect(patternInput).toHaveValue('Kontanthævning');
-	await page.getByLabel(/Name/i).fill('Cash withdrawal');
-	await page.getByLabel(/Target subcategory/i).selectOption(String(groceriesId));
-	await page.locator('[data-save-rule]').click();
-	await expect(page).toHaveURL(/\/rules$/);
+	await expect(builder.locator('input[spellcheck="false"]')).toHaveValue('Kontanthævning');
+	await builder.getByLabel(/Name/i).fill('Cash withdrawal');
+	await builder.getByLabel(/Target subcategory/i).selectOption(String(groceriesId));
+	await page.keyboard.press('Control+Enter');
+	await expect(page).toHaveURL(/\/categorize/);
 	lines = await listLines('pageSize=100');
 	expect(lines.find((l) => l.id === kontId)?.source).toBe('rule');
 
