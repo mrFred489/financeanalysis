@@ -33,12 +33,12 @@
 		}
 	});
 
-	const navItems = [
+	const navItems: { href: string; key: string; disabled?: boolean }[] = [
 		{ href: '/statements', key: 'nav.statements' },
 		{ href: '/categorize', key: 'nav.categorize' },
 		{ href: '/transfers', key: 'nav.transfers' },
 		{ href: '/rules', key: 'nav.rules' },
-		{ href: '/visualize', key: 'nav.visualize', disabled: true },
+		{ href: '/visualize', key: 'nav.visualize' },
 		{ href: '/import', key: 'nav.import' },
 		{ href: '/settings', key: 'nav.settings' }
 	];

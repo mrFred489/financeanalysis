@@ -138,6 +138,10 @@ func (s *Server) setupRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/transfers/{id}/unlink", s.handleUnlinkTransfer())
 	mux.Handle("GET /api/lines/{id}/transfer", s.handleGetLineTransfer())
 
+	// Visualization (M5, plan docs/plans/M5-visualization.md step 3)
+	mux.Handle("GET /api/viz/timeseries", s.handleVizTimeseries())
+	mux.Handle("GET /api/viz/share", s.handleVizShare())
+
 	// Settings
 	mux.Handle("GET /api/settings", s.handleGetSettings())
 	mux.Handle("PUT /api/settings", s.handleUpdateSettings())

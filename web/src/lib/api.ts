@@ -727,4 +727,61 @@ export async function getLineTransfer(lineId: number): Promise<LineTransfer> {
 	return apiFetch<LineTransfer>(`/lines/${lineId}/transfer`);
 }
 
+// --- M5 visualization (VIZ-1..7) ---
+
+export interface VizBucket {
+	month: string; // YYYY-MM
+	byCategory: Record<string, number>; // category key → net sum (minor units)
+	bySubcategory: Record<string, number>; // subcategory id (string key) → sum
+	byAccount: Record<string, number>; // account id (string key) → sum
+	uncategorized: number;
+	conflict: number;
+	transfer: number;
+}
+
+export interface VizTimeseriesResponse {
+	buckets: VizBucket[];
+}
+
+export interface VizShare {
+	subcategoryId: number;
+	subcategoryName: string;
+	categoryKey: string;
+	color: string;
+	amountMinor: number;
+}
+
+export interface VizShareResponse {
+	shares: VizShare[];
+}
+
+export interface VizFilterParams {
+	from?: string;
+	to?: string;
+	accounts?: number[];
+	categories?: number[];
+	subcategories?: number[];
+	includeTransfers?: boolean;
+}
+
+export function vizQueryString(f: VizFilterParams): string {
+	const sp = new URLSearchParams();
+	if (f.from) sp.set('from', f.from);
+	if (f.to) sp.set('to', f.to);
+	if (f.accounts?.length) sp.set('accounts', f.accounts.join(','));
+	if (f.categories?.length) sp.set('categories', f.categories.join(','));
+	if (f.subcategories?.length) sp.set('subcategories', f.subcategories.join(','));
+	if (f.includeTransfers) sp.set('includeTransfers', '1');
+	const s = sp.toString();
+	return s ? '?' + s : '';
+}
+
+export async function getVizTimeseries(f: VizFilterParams): Promise<VizTimeseriesResponse> {
+	return apiFetch<VizTimeseriesResponse>('/viz/timeseries' + vizQueryString(f));
+}
+
+export async function getVizShare(f: VizFilterParams): Promise<VizShareResponse> {
+	return apiFetch<VizShareResponse>('/viz/share' + vizQueryString(f));
+}
+
 export { ni };

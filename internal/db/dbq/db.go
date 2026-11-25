@@ -210,6 +210,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listLinesForRulesStmt, err = db.PrepareContext(ctx, listLinesForRules); err != nil {
 		return nil, fmt.Errorf("error preparing query ListLinesForRules: %w", err)
 	}
+	if q.listLinesForVizStmt, err = db.PrepareContext(ctx, listLinesForViz); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLinesForViz: %w", err)
+	}
 	if q.listRuleAccountsStmt, err = db.PrepareContext(ctx, listRuleAccounts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRuleAccounts: %w", err)
 	}
@@ -606,6 +609,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listLinesForRulesStmt: %w", cerr)
 		}
 	}
+	if q.listLinesForVizStmt != nil {
+		if cerr := q.listLinesForVizStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLinesForVizStmt: %w", cerr)
+		}
+	}
 	if q.listRuleAccountsStmt != nil {
 		if cerr := q.listRuleAccountsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listRuleAccountsStmt: %w", cerr)
@@ -842,6 +850,7 @@ type Queries struct {
 	listLineIdsByImportStmt              *sql.Stmt
 	listLinesByRuleStmt                  *sql.Stmt
 	listLinesForRulesStmt                *sql.Stmt
+	listLinesForVizStmt                  *sql.Stmt
 	listRuleAccountsStmt                 *sql.Stmt
 	listRulesStmt                        *sql.Stmt
 	listSettingsStmt                     *sql.Stmt
@@ -937,6 +946,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listLineIdsByImportStmt:              q.listLineIdsByImportStmt,
 		listLinesByRuleStmt:                  q.listLinesByRuleStmt,
 		listLinesForRulesStmt:                q.listLinesForRulesStmt,
+		listLinesForVizStmt:                  q.listLinesForVizStmt,
 		listRuleAccountsStmt:                 q.listRuleAccountsStmt,
 		listRulesStmt:                        q.listRulesStmt,
 		listSettingsStmt:                     q.listSettingsStmt,

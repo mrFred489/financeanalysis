@@ -35,6 +35,27 @@
 	"placeholder": {
 		"m5": "Charts are part of milestone M5 and not available yet."
 	},
+	"viz": {
+		"subtitle": "Charts and trends for your spending",
+		"loading": "Loading charts…",
+		"empty": "No data yet. Import statements and categorize lines to see charts.",
+		"includeTransfers": "Include transfers",
+		"avgWindow": "Avg window:",
+		"monthsSuffix": " mo",
+		"granularity": {
+			"month": "Month",
+			"quarter": "Quarter",
+			"year": "Year"
+		},
+		"chart": {
+			"monthlyStacked": "Monthly spending by category",
+			"incomeVsExpenses": "Income vs expenses vs savings",
+			"subcategoryBreakdown": "Subcategory breakdown over time",
+			"subcategoryShare": "Subcategory share (selected period)",
+			"rollingAverage": "Rolling average per category",
+			"accountAverage": "Per-account average monthly spending"
+		}
+	},
 	"welcome": {
 		"title": "Welcome to FinanceAnalysis",
 		"subtitle": "Set up your local database to get started.",
