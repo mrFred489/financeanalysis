@@ -391,27 +391,30 @@
 					{/if}
 				</section>
 			{/if}
-		</div>
-	</div>
 
-	<div class="flex justify-end gap-2">
-		<button
-			type="button"
-			onclick={onCancel}
-			class="px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
-			>{cancelLabel ?? $i18n.t('rules.form.cancel')}</button
-		>
-		<button
-			type="submit"
-			disabled={saving ||
-				regexError !== null ||
-				pattern.trim() === '' ||
-				name.trim() === '' ||
-				subcategoryId === null}
-			class="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
-			data-save-rule
-		>
-			{saving ? $i18n.t('rules.form.saving') : (submitLabel ?? $i18n.t('rules.form.save'))}
-		</button>
+			<!-- Actions live under the preview so that in the side-by-side
+			     layout they fill the space below the preview instead of
+			     adding a full-width row under the grid. -->
+			<div class="flex justify-end gap-2">
+				<button
+					type="button"
+					onclick={onCancel}
+					class="px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+					>{cancelLabel ?? $i18n.t('rules.form.cancel')}</button
+				>
+				<button
+					type="submit"
+					disabled={saving ||
+						regexError !== null ||
+						pattern.trim() === '' ||
+						name.trim() === '' ||
+						subcategoryId === null}
+					class="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+					data-save-rule
+				>
+					{saving ? $i18n.t('rules.form.saving') : (submitLabel ?? $i18n.t('rules.form.save'))}
+				</button>
+			</div>
+		</div>
 	</div>
 </form>
