@@ -10,17 +10,17 @@
 //	2  account number      10  bank reference
 //	3  counterparty acct.  11  secondary reference (e.g. MobilePay id)
 //	4  amount (da-DK)      12-13 reserved
-//	5  balance (optional)  14  extra text
+//	5  IGNORED (the bank uses this column for something else; it is not a
+//	   balance and its content is never parsed or stored)   14  extra text
 //	6  currency (optional) 15  reserved
 //	7  transaction date (dd-mm-yyyy)
 //
-// Columns 5 (balance) and 6 (currency) are empty in the current export: an
-// empty balance is returned as nil, an empty currency defaults to DKK. Rows
-// with more than 16 fields (an unquoted ';' in the message) are tolerated by
-// joining the surplus fields back into the message; rows with fewer than 16
-// fields are parse errors. Amounts use the Danish number format: '.'
-// thousands separator, ',' decimal separator, stored as integer minor units
-// (øre).
+// Column 5 is ignored entirely, whatever it contains. Column 6 (currency)
+// defaults to DKK when empty. Rows with more than 16 fields (an unquoted ';'
+// in the message) are tolerated by joining the surplus fields back into the
+// message; rows with fewer than 16 fields are parse errors. Amounts use the
+// Danish number format: '.' thousands separator, ',' decimal separator,
+// stored as integer minor units (øre).
 package csvparse
 
 import (
@@ -44,7 +44,6 @@ type RawLine struct {
 	AccountFrom     string  `json:"accountFrom"`               // column 2
 	AccountTo       string  `json:"accountTo,omitempty"`       // column 3, transfers only
 	AmountMinor     int64   `json:"amountMinor"`               // column 4, øre, negative for expenses
-	BalanceMinor    *int64  `json:"balanceMinor,omitempty"`    // column 5, nil when the export has no balance
 	Currency        string  `json:"currency"`                  // column 6, "DKK" when empty
 	BankRef         string  `json:"bankRef,omitempty"`         // column 10
 	ExtraRef        string  `json:"extraRef,omitempty"`        // column 11
@@ -113,7 +112,7 @@ func Parse(r io.Reader) (*Result, error) {
 		accountFrom := strings.TrimSpace(tail[0])
 		accountTo := strings.TrimSpace(tail[1])
 		amountStr := strings.TrimSpace(tail[2])
-		balanceStr := strings.TrimSpace(tail[3])
+		// tail[3] is column 5: ignored, the bank uses it for something else
 		currencyStr := strings.TrimSpace(tail[4])
 		transactionStr := strings.TrimSpace(tail[5])
 		bookingStr := strings.TrimSpace(tail[6])
@@ -142,15 +141,6 @@ func Parse(r io.Reader) (*Result, error) {
 			res.Errors = append(res.Errors, ParseError{Row: rowNum, Reason: fmt.Sprintf("invalid amount %q: %v", amountStr, err)})
 			continue
 		}
-		var balance *int64
-		if balanceStr != "" {
-			b, err := parseMinor(balanceStr)
-			if err != nil {
-				res.Errors = append(res.Errors, ParseError{Row: rowNum, Reason: fmt.Sprintf("invalid balance %q: %v", balanceStr, err)})
-				continue
-			}
-			balance = &b
-		}
 		currency := strings.ToUpper(currencyStr)
 		if currency == "" {
 			currency = "DKK"
@@ -165,8 +155,7 @@ func Parse(r io.Reader) (*Result, error) {
 			continue
 		}
 
-		// The dedup/occurrence key has no balance: the current format has no
-		// running balance (PRD section 6).
+		// The dedup/occurrence key (PRD section 6) has no balance column.
 		key := date + "\x00" + strconv.FormatInt(amount, 10) + "\x00" + message
 		seen[key]++
 
@@ -178,7 +167,6 @@ func Parse(r io.Reader) (*Result, error) {
 			AccountFrom:     accountFrom,
 			AccountTo:       accountTo,
 			AmountMinor:     amount,
-			BalanceMinor:    balance,
 			Currency:        currency,
 			BankRef:         bankRef,
 			ExtraRef:        extraRef,

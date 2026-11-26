@@ -39,8 +39,9 @@ type InsertStatementLineParams struct {
 
 // M1: new lines always get source = 'none' (D5); rule/transfer evaluation is M3/M4.
 // CSV format v2 (PRD section 7.2): transaction_date/value_date come from columns
-// 7/9, balance_minor from column 5 (NULL when the export has no balance),
-// bank_ref from column 10, counterparty_account from column 3 (transfers).
+// 7/9, balance_minor is always NULL on import (column 5 is ignored: the bank
+// uses it for something else), bank_ref from column 10, counterparty_account
+// from column 3 (transfers).
 func (q *Queries) InsertStatementLine(ctx context.Context, arg InsertStatementLineParams) (int64, error) {
 	row := q.queryRow(ctx, q.insertStatementLineStmt, insertStatementLine,
 		arg.AccountID,

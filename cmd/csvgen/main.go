@@ -3,8 +3,9 @@
 //
 // Every file sticks to the known 16-column `;`-separated layout with no
 // header row, sorted newest-first on the booking date (column 8) as the
-// parser expects. Columns 5 (balance) and 6 (currency) are always empty,
-// matching the current bank export. Messages frequently contain special
+// parser expects. Column 5 is ignored by the parser (the bank uses it for
+// something else) and column 6 (currency) is always empty, matching the
+// current bank export. Messages frequently contain special
 // characters (;, ", ,, æøå, emoji, ...) and amounts span 1 øre to
 // 1.000.000.000 øre with random sign. A small share of rows are transfers
 // between --account and --transfer-account so generated files interlock
@@ -277,7 +278,7 @@ func writeFile(path string, rows []row) error {
 			r.accountFrom,
 			r.accountTo,
 			formatMinor(r.amount),
-			"", // 5: balance (empty in the current export)
+			"", // 5: ignored by the import (not a balance column)
 			"", // 6: currency (empty means DKK)
 			formatDate(r.transaction),
 			formatDate(r.booking),

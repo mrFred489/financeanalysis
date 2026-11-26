@@ -40,9 +40,6 @@ func TestParseNormal(t *testing.T) {
 	if first.AmountMinor != 2500000 {
 		t.Errorf("expected amount 2500000, got %d", first.AmountMinor)
 	}
-	if first.BalanceMinor != nil {
-		t.Errorf("expected nil balance (no balance column in v2 export), got %v", *first.BalanceMinor)
-	}
 	if first.AccountFrom != "9999 0000000001" {
 		t.Errorf("expected account 9999 0000000001, got %q", first.AccountFrom)
 	}
@@ -103,17 +100,19 @@ func TestParseErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
-	if len(res.Lines) != 2 {
-		t.Errorf("expected 2 valid lines, got %d", len(res.Lines))
+	// Row 5 carries "xyz" in column 5, which the import ignores, so it is a
+	// valid line now: 3 valid lines, 4 errors.
+	if len(res.Lines) != 3 {
+		t.Errorf("expected 3 valid lines, got %d", len(res.Lines))
 	}
-	if len(res.Errors) != 5 {
-		t.Fatalf("expected 5 parse errors, got %d: %v", len(res.Errors), res.Errors)
+	if len(res.Errors) != 4 {
+		t.Fatalf("expected 4 parse errors, got %d: %v", len(res.Errors), res.Errors)
 	}
 	rows := map[int]string{}
 	for _, e := range res.Errors {
 		rows[e.Row] = e.Reason
 	}
-	for _, want := range []int{2, 3, 4, 5, 6} {
+	for _, want := range []int{2, 3, 4, 6} {
 		if _, ok := rows[want]; !ok {
 			t.Errorf("expected parse error on row %d, got rows %v", want, rows)
 		}
@@ -171,9 +170,6 @@ func TestParseFormatV2Snippet(t *testing.T) {
 	if first.Date != "2026-11-05" || first.AmountMinor != -48514 || first.BankRef != "1000000001" {
 		t.Errorf("unexpected first line: %+v", first)
 	}
-	if first.BalanceMinor != nil {
-		t.Errorf("expected nil balance, got %d", *first.BalanceMinor)
-	}
 
 	// MobilePay row: secondary reference (col 11) and extra text (col 14)
 	mp := res.Lines[3]
@@ -199,6 +195,33 @@ func TestParseFormatV2Snippet(t *testing.T) {
 	// File is newest-first on the booking date; seq is the reverse
 	if res.Lines[0].Seq != 12 || res.Lines[11].Seq != 1 {
 		t.Errorf("expected seq 12/1, got %d/%d", res.Lines[0].Seq, res.Lines[11].Seq)
+	}
+}
+
+// TestParseColumn5Ignored verifies that column 5 is not treated as a balance:
+// whatever it contains (numbers, arbitrary text) is ignored and never causes
+// a parse error or a stored value.
+func TestParseColumn5Ignored(t *testing.T) {
+	// Fixture with numeric values in column 5 (formerly interpreted as balance)
+	res, err := Parse(strings.NewReader(fixture(t, "balance_gaps.csv")))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(res.Lines) != 3 || len(res.Errors) != 0 || len(res.Warnings) != 0 {
+		t.Fatalf("expected 3 clean lines, got %d lines, errors %v, warnings %v", len(res.Lines), res.Errors, res.Warnings)
+	}
+	if res.Lines[0].AmountMinor != -3000 {
+		t.Errorf("expected amount -3000, got %d", res.Lines[0].AmountMinor)
+	}
+
+	// Arbitrary non-numeric content in column 5 must not fail the row either
+	row := ";Msg;9999 0000000001;;-10,00;SOME-OTHER-THING;;01-05-2025;01-05-2025;01-05-2025;0000000060;;;;;"
+	res, err = Parse(strings.NewReader(row + "\n"))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(res.Lines) != 1 || len(res.Errors) != 0 {
+		t.Fatalf("expected 1 clean line with garbage in column 5, got %d lines, errors %v", len(res.Lines), res.Errors)
 	}
 }
 

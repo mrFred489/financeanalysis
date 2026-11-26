@@ -34,7 +34,7 @@ var ErrNoImportToUndo = errors.New("no import to undo")
 
 // Warning is a non-blocking finding shown in the preview screen (IMP-5).
 type Warning struct {
-	Type    string `json:"type"` // balance_gap | account_mismatch | duplicate_file | non_dkk | no_balance
+	Type    string `json:"type"` // account_mismatch | duplicate_file | non_dkk
 	Message string `json:"message"`
 	Row     int    `json:"row,omitempty"`
 }
@@ -154,34 +154,6 @@ func Preview(ctx context.Context, q *dbq.Queries, secret []byte, accountID int64
 	if len(parsed.Lines) > 0 {
 		res.DateFrom = parsed.Lines[len(parsed.Lines)-1].Date // oldest = last in file
 		res.DateTo = parsed.Lines[0].Date                     // newest = first in file
-	}
-
-	// IMP-7: balance continuity within the file, only when the file carries a
-	// balance (column 5): balance(row) = balance(row below) + amount(row)
-	hasBalance := true
-	for _, line := range parsed.Lines {
-		if line.BalanceMinor == nil {
-			hasBalance = false
-			break
-		}
-	}
-	if hasBalance {
-		for i := 0; i+1 < len(parsed.Lines); i++ {
-			row, below := parsed.Lines[i], parsed.Lines[i+1]
-			expected := *below.BalanceMinor + row.AmountMinor
-			if *row.BalanceMinor != expected {
-				res.Warnings = append(res.Warnings, Warning{
-					Type:    "balance_gap",
-					Message: fmt.Sprintf("Balance gap at row %d: balance is %d, expected %d (previous row's balance + amount)", row.FileRow, *row.BalanceMinor, expected),
-					Row:     row.FileRow,
-				})
-			}
-		}
-	} else if len(parsed.Lines) > 0 {
-		res.Warnings = append(res.Warnings, Warning{
-			Type:    "no_balance",
-			Message: "The file has no balance column; the balance continuity check (IMP-7) was skipped.",
-		})
 	}
 
 	// IMP-8: account sanity check via the account number in columns 2/3
@@ -306,7 +278,9 @@ func Commit(ctx context.Context, d *sql.DB, secret []byte, backupDir string, acc
 			ValueDate:           nullString(line.ValueDate),
 			Message:             line.Message,
 			AmountMinor:         line.AmountMinor,
-			BalanceMinor:        nullInt64(line.BalanceMinor),
+			// Column 5 of the CSV is ignored (the bank uses it for something
+			// else), so imported lines always get a NULL balance.
+			BalanceMinor:        sql.NullInt64{},
 			Currency:            line.Currency,
 			BankRef:             nullStringOrEmpty(line.BankRef),
 			CounterpartyAccount: nullStringOrEmpty(counterpartyOf(line, acc.AccountNumber)),
@@ -410,14 +384,6 @@ func nullStringOrEmpty(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
-}
-
-// nullInt64 converts an optional int64 pointer to sql.NullInt64.
-func nullInt64(v *int64) sql.NullInt64 {
-	if v == nil {
-		return sql.NullInt64{}
-	}
-	return sql.NullInt64{Int64: *v, Valid: true}
 }
 
 // UndoLatest deletes the lines of the latest non-undone import batch (globally)

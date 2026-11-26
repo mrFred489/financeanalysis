@@ -74,9 +74,10 @@ func TestPreviewNormal(t *testing.T) {
 	if res.DateFrom != "2024-12-29" || res.DateTo != "2024-12-31" {
 		t.Errorf("expected date range 2024-12-29..2024-12-31, got %s..%s", res.DateFrom, res.DateTo)
 	}
-	// The v2 export has no balance column: exactly one info warning (IMP-7 skipped)
-	if len(res.Warnings) != 1 || res.Warnings[0].Type != "no_balance" {
-		t.Errorf("expected a single no_balance warning for a clean first import, got %v", res.Warnings)
+	// Clean first import: no warnings (column 5 of the CSV is ignored, so the
+	// import produces no balance-related warnings)
+	if len(res.Warnings) != 0 {
+		t.Errorf("expected no warnings for a clean first import, got %v", res.Warnings)
 	}
 	// Account sanity: the file's account number matches the account (IMP-8)
 	if len(res.FileAccounts) != 1 || res.FileAccounts[0] != "9999 0000000001" {
@@ -92,27 +93,23 @@ func TestPreviewNormal(t *testing.T) {
 	}
 }
 
-func TestPreviewBalanceGaps(t *testing.T) {
+// TestPreviewIgnoresBalanceColumn: column 5 is used by the bank for something
+// else, so the import ignores it — values there must not produce balance
+// warnings or influence the preview.
+func TestPreviewIgnoresBalanceColumn(t *testing.T) {
 	ctx, q, secret, _, accountID := setup(t)
 
 	res, err := Preview(ctx, q, secret, accountID, "balance_gaps.csv", fixture(t, "balance_gaps.csv"))
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
-	var gaps int
-	for _, w := range res.Warnings {
-		if w.Type == "balance_gap" {
-			gaps++
-			if w.Row != 2 {
-				t.Errorf("expected gap at row 2, got row %d", w.Row)
-			}
-		}
-		if w.Type == "no_balance" {
-			t.Errorf("file carries balances, no_balance warning should not appear: %v", w)
-		}
+	if res.NewCount != 3 || res.DuplicateCount != 0 {
+		t.Errorf("expected 3 new / 0 dup, got %d / %d", res.NewCount, res.DuplicateCount)
 	}
-	if gaps != 1 {
-		t.Errorf("expected 1 balance gap warning, got %d (%v)", gaps, res.Warnings)
+	for _, w := range res.Warnings {
+		if w.Type == "balance_gap" || w.Type == "no_balance" {
+			t.Errorf("unexpected balance-related warning for an ignored column 5: %v", w)
+		}
 	}
 }
 
@@ -202,7 +199,7 @@ func TestCommitAndUndoRoundTrip(t *testing.T) {
 	if lines[0].BookingDate != "2024-12-31" || lines[0].Seq != 3 {
 		t.Errorf("expected newest first with seq 3, got %s seq %d", lines[0].BookingDate, lines[0].Seq)
 	}
-	// v2 export has no balance -> NULL; bank_ref from column 10 is stored
+	// column 5 is ignored on import -> balance NULL; bank_ref from column 10 is stored
 	if lines[0].BalanceMinor.Valid {
 		t.Errorf("expected NULL balance, got %d", lines[0].BalanceMinor.Int64)
 	}
@@ -301,7 +298,7 @@ func TestPreviewCommitRealSnippet(t *testing.T) {
 	if len(lines) != 12 {
 		t.Fatalf("expected 12 lines, got %d", len(lines))
 	}
-	// newest first (2026-11-05), balance NULL, bank_ref stored
+	// newest first (2026-11-05), balance NULL (column 5 ignored), bank_ref stored
 	if lines[0].BookingDate != "2026-11-05" || lines[0].BalanceMinor.Valid {
 		t.Errorf("unexpected newest line: %+v", lines[0])
 	}
